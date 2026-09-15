@@ -195,6 +195,18 @@ class JobRepository:
             )
         self.session.flush()
 
+    def record_search_profile_match(self, job_id: int, profile_name: str) -> None:
+        """Discovery provenance (Phase 2.5, see docs/discovery.md): note
+        that `profile_name` turned up this job, without duplicating the
+        job row if another profile already found it this run or a prior one.
+        """
+        record = self.session.get(JobRecord, job_id)
+        if record is None:
+            raise ValueError(f"No job found with id={job_id}")
+        if profile_name not in record.discovered_by_profiles:
+            record.discovered_by_profiles = [*record.discovered_by_profiles, profile_name]
+            self.session.flush()
+
     def list_duplicates(self) -> list[PossibleDuplicateRecord]:
         return list(self.session.execute(select(PossibleDuplicateRecord)).scalars().all())
 

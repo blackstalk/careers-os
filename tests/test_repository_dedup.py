@@ -1,3 +1,5 @@
+import pytest
+
 from careers_os.domain.enums import JobStatus
 from careers_os.sources.creative_circle import parser
 from careers_os.storage.repository import JobRepository
@@ -173,3 +175,39 @@ class TestChangeTracking:
         record, _ = repo.upsert_job(normalized, raw)
         repo.upsert_job(normalized, raw)  # identical re-sync
         assert repo.list_changes(record.id) == []
+
+
+class TestDiscoveryProfileProvenance:
+    def test_new_job_has_no_profiles_until_recorded(self, db_session, search_response):
+        repo = JobRepository(db_session)
+        raw, normalized = _raw_and_normalized(search_response, "100001")
+        record, _ = repo.upsert_job(normalized, raw)
+        assert record.discovered_by_profiles == []
+
+    def test_recording_a_profile_match_appends_it(self, db_session, search_response):
+        repo = JobRepository(db_session)
+        raw, normalized = _raw_and_normalized(search_response, "100001")
+        record, _ = repo.upsert_job(normalized, raw)
+        repo.record_search_profile_match(record.id, "php")
+        assert record.discovered_by_profiles == ["php"]
+
+    def test_recording_the_same_profile_twice_does_not_duplicate(self, db_session, search_response):
+        repo = JobRepository(db_session)
+        raw, normalized = _raw_and_normalized(search_response, "100001")
+        record, _ = repo.upsert_job(normalized, raw)
+        repo.record_search_profile_match(record.id, "php")
+        repo.record_search_profile_match(record.id, "php")
+        assert record.discovered_by_profiles == ["php"]
+
+    def test_recording_multiple_different_profiles_accumulates(self, db_session, search_response):
+        repo = JobRepository(db_session)
+        raw, normalized = _raw_and_normalized(search_response, "100001")
+        record, _ = repo.upsert_job(normalized, raw)
+        repo.record_search_profile_match(record.id, "php")
+        repo.record_search_profile_match(record.id, "laravel")
+        assert set(record.discovered_by_profiles) == {"php", "laravel"}
+
+    def test_recording_against_unknown_job_id_raises(self, db_session):
+        repo = JobRepository(db_session)
+        with pytest.raises(ValueError):
+            repo.record_search_profile_match(999999, "php")

@@ -12,6 +12,8 @@ from sqlalchemy import (
     Integer,
     String,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import (
@@ -107,6 +109,11 @@ class JobRecord(Base):
         ForeignKey("raw_jobs.id"), nullable=True
     )
     raw_job: Mapped[Optional[RawJobRecord]] = relationship()
+
+    # Discovery provenance (Phase 2.5, see docs/discovery.md): which
+    # search profile(s) turned this job up. A job found by both "php" and
+    # "laravel" queries gets both names here, not two job rows.
+    discovered_by_profiles: Mapped[list] = mapped_column(JSON, default=list)
 
     scores: Mapped[list["JobScoreRecord"]] = relationship(
         back_populates="job", order_by="desc(JobScoreRecord.computed_at)"
@@ -246,11 +253,31 @@ class JobChangeRecord(Base):
     new_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+def _apply_lightweight_migrations(engine: Engine) -> None:
+    """Add newly-introduced columns to an already-existing SQLite file.
+
+    `Base.metadata.create_all` only creates missing *tables*, not columns
+    on tables that already exist — this project has no real migration
+    framework (Alembic would be overkill for a single-user local SQLite
+    file), so new columns are added here, one at a time, as they're
+    introduced. Each check is a no-op once the column exists.
+    """
+    inspector = inspect(engine)
+    if "jobs" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("jobs")}
+        if "discovered_by_profiles" not in existing:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE jobs ADD COLUMN discovered_by_profiles JSON DEFAULT '[]'")
+                )
+
+
 def get_engine(db_path: Optional[Path] = None) -> Engine:
     path = db_path or DEFAULT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(f"sqlite:///{path}")
     Base.metadata.create_all(engine)
+    _apply_lightweight_migrations(engine)
     return engine
 
 

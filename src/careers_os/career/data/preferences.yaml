@@ -31,3 +31,13 @@ component_weights:
   compensation_fit: 0.15
   work_arrangement_fit: 0.10
   experience_fit: 0.05
+
+discovery_ranking_weights:
+  # Used only by `jobs discover` (Phase 2.5) to order results — see
+  # docs/discovery.md#ranking-philosophy. Each dimension (bridge role,
+  # immediate opportunity, career direction, overall_fit) stays
+  # independently visible in the output; this only affects sort order.
+  overall_fit: 0.40
+  bridge_role: 0.20
+  immediate_opportunity: 0.25
+  career_direction: 0.15

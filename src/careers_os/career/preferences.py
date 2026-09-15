@@ -42,10 +42,28 @@ class ComponentWeights(BaseModel):
         return self.model_dump()
 
 
+class DiscoveryRankingWeights(BaseModel):
+    """Weights combining overall_fit with the Phase 2.5 discovery-specific
+    dimensions (bridge role, immediate opportunity, career direction) into
+    one sortable rank score — see docs/discovery.md#ranking-philosophy.
+    Each dimension stays independently visible in `jobs discover` output;
+    this is only used to order results.
+    """
+
+    overall_fit: float
+    bridge_role: float
+    immediate_opportunity: float
+    career_direction: float
+
+    def as_dict(self) -> dict[str, float]:
+        return self.model_dump()
+
+
 class Preferences(BaseModel):
     compensation: CompensationPreferences
     work_arrangement: WorkArrangementPreferences
     component_weights: ComponentWeights
+    discovery_ranking_weights: Optional[DiscoveryRankingWeights] = None
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "Preferences":

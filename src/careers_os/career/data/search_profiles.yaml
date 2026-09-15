@@ -1,0 +1,52 @@
+# Discovery search profiles for `jobs discover` (Phase 2.5). Each profile
+# is one or more independent keyword queries run against every available
+# source — a job only needs to match ONE query from ONE profile to be
+# discovered, never all of them. Add a profile here to make it available
+# to `jobs discover --profile <name>`; no code change needed.
+#
+# Phase 2.5's anchors are technologies with strong existing market
+# credibility (see docs/discovery.md) — the goal is to feel out the
+# market and warm up interviewing while staying in the current full-time
+# role, not necessarily to find the long-term destination role.
+
+profiles:
+  php:
+    enabled: true
+    queries:
+      - PHP
+
+  laravel:
+    enabled: true
+    queries:
+      - Laravel
+
+  craft:
+    enabled: true
+    queries:
+      - "Craft CMS"
+
+  wordpress:
+    enabled: true
+    queries:
+      - WordPress
+
+# Employment types considered in scope for the current job-search phase:
+# testing the market / warming up interviewing without giving up the
+# current full-time role yet (see docs/discovery.md). Not a hard
+# exclusion elsewhere in scoring — only `jobs discover`'s default filter.
+# Note: no source exposes a distinct "freelance-to-hire" employment type;
+# those postings are labeled contract or freelance by the source itself,
+# so both are included here.
+#
+# `unknown` is included deliberately, not as an oversight: Greenhouse
+# almost never exposes employment_type at all (see
+# docs/sources/greenhouse.md), so excluding "unknown" would silently drop
+# most Greenhouse postings regardless of their real employment type — a
+# live discovery run surfaced exactly this (a 56%-fit Stripe match got
+# hidden). Consistent with this project's existing rule of never
+# penalizing/excluding for a field the source simply didn't publish.
+default_employment_types:
+  - contract
+  - freelance
+  - part_time
+  - unknown

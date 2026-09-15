@@ -9,14 +9,16 @@ from rich.table import Table
 
 from careers_os.career.resume_import import import_resume_docx
 from careers_os.career.resume_recommendation import recommend_resume_variant
+from careers_os.career.search_profiles import SearchProfilesConfig
 from careers_os.career.timeline import humanize_years
 from careers_os.domain.enums import EmploymentType, JobStatus
 from careers_os.domain.matching import MatchType
 from careers_os.domain.query import JobSearchQuery, SortOrder
+from careers_os.ingestion.discovery import DiscoveryOpportunity, run_discovery
 from careers_os.ingestion.pipeline import IngestionResult, run_search_ingestion
 from careers_os.observability.logging import configure_logging
 from careers_os.career.evidence_index import EvidenceIndex
-from careers_os.sources.base import SourceHealth
+from careers_os.sources.base import JobSource, SourceHealth
 from careers_os.sources.creative_circle.source import CreativeCircleSource
 from careers_os.sources.greenhouse.config import GreenhouseBoardsConfig
 from careers_os.sources.greenhouse.source import GreenhouseSource
@@ -250,6 +252,137 @@ def search_greenhouse_all(
     combined.sort(key=lambda r: r.fit.overall_fit if r.fit else 0.0, reverse=True)
     console.print()
     _print_results_table(combined)
+
+
+def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
+    job = opp.job
+    console.print(f"[bold]{rank}. {job.title}[/bold]")
+    console.print(f"   Company: {job.company or 'unknown'}")
+    console.print(f"   Source: {job.source}")
+    console.print(f"   Overall Fit: {opp.fit.overall_fit * 100:.0f}%")
+    console.print()
+    console.print(f"   Immediate Opportunity: {opp.immediate.level.value.capitalize()}")
+    console.print(f"   Career Bridge: {opp.bridge.classification.value.capitalize()}")
+
+    detail = opp.fit.experience_detail
+    if detail is not None and detail.strong_matches:
+        console.print()
+        console.print("   Strong Evidence:")
+        for m in detail.strong_matches[:6]:
+            console.print(f"   [green]✓[/green] {m.requirement.text}")
+    if detail is not None and detail.real_experience_gaps:
+        console.print()
+        console.print("   Gap:")
+        for m in detail.real_experience_gaps[:3]:
+            console.print(f"   [red]✗[/red] {m.requirement.text}")
+
+    console.print()
+    console.print(f"   Compensation: {_comp_str(job)}")
+
+    if detail is not None:
+        rec = recommend_resume_variant(detail)
+        if rec.recommended_variant:
+            console.print(f"   Recommended Resume: {rec.recommended_variant}")
+
+    console.print(f"   Matched profiles: {', '.join(opp.matched_profiles) or '-'}")
+    console.print(f"   Why it ranks: {opp.bridge.reason}")
+    console.print(f"   Job: {job.source}/{job.source_job_id}  |  {job.source_url}")
+    console.print()
+
+
+@app.command("discover")
+def discover(
+    profile: list[str] = typer.Option(
+        None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
+    ),
+    source: Optional[str] = typer.Option(
+        None, "--source", help="Limit to 'creative-circle' or 'greenhouse'. Default: both."
+    ),
+    remote: bool = typer.Option(False, "--remote", help="Remote-only."),
+    employment_type: list[EmploymentType] = typer.Option(
+        None,
+        "--employment-type",
+        help="Override the profile config's default employment-type filter (repeatable).",
+    ),
+    min_fit: Optional[float] = typer.Option(
+        None, "--min-fit", help="Only show opportunities with overall_fit >= this (0.0-1.0)."
+    ),
+    limit: int = typer.Option(20, "--limit", help="Max opportunities to display."),
+    ai: bool = typer.Option(True, "--ai/--no-ai", help="Use AI evaluation if ANTHROPIC_API_KEY is set."),
+) -> None:
+    """Search every enabled discovery profile across available sources,
+    rank the results, and show the strongest opportunities.
+
+    Reuses the existing search -> normalize -> dedupe -> score -> evidence-match
+    pipeline for every (source, query) pair — this command only adds
+    ranking (bridge-role strength, immediate opportunity, career
+    direction) and cross-profile discovery provenance on top. See
+    docs/discovery.md.
+
+    Example:
+        jobs discover
+        jobs discover --profile laravel --profile craft --remote --limit 10
+    """
+    if source is not None and source not in ("creative-circle", "greenhouse"):
+        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle or greenhouse)")
+        raise typer.Exit(code=1)
+
+    profiles_config = SearchProfilesConfig.load()
+    try:
+        profiles = profiles_config.enabled_profiles(profile or None)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    if not profiles:
+        console.print("No search profiles enabled.")
+        raise typer.Exit()
+
+    employment_types = employment_type or profiles_config.default_employment_types
+
+    sources: list[tuple[str, JobSource]] = []
+    if source in (None, "creative-circle"):
+        sources.append(("creative_circle", CreativeCircleSource()))
+    if source in (None, "greenhouse"):
+        for board in GreenhouseBoardsConfig.load().boards:
+            sources.append(("greenhouse", GreenhouseSource(board)))
+
+    console.print("[bold]CAREER OS — DISCOVERY[/bold]")
+    console.print(
+        f"Profiles: {', '.join(p.name for p in profiles)}  |  "
+        f"Employment types: {', '.join(t.value for t in employment_types) if employment_types else 'any'}\n"
+    )
+
+    repo = _repository()
+    evidence_index = _evidence_index()
+    try:
+        result = run_discovery(
+            repo, sources, profiles,
+            remote_only=remote, employment_types=employment_types, min_fit=min_fit,
+            limit=limit, use_ai=ai, evidence_index=evidence_index,
+        )
+    finally:
+        for _family, src in sources:
+            src.close()
+
+    m = result.metrics
+    console.print(f"Sources queried: {m.sources_queried}")
+    console.print(f"Search profiles: {m.search_profiles}")
+    console.print(f"Raw jobs discovered: {m.raw_jobs_discovered}")
+    console.print(f"Unique jobs: {m.unique_jobs}")
+    console.print(f"Strong matches: {m.strong_matches}")
+    console.print(f"Strong bridge roles: {m.strong_bridge_roles}")
+    console.print(f"New jobs: {m.new_jobs}")
+    console.print(f"Updated jobs: {m.updated_jobs}")
+    for note in result.notes:
+        console.print(f"[yellow]note:[/yellow] {note}")
+    console.print()
+
+    if not result.opportunities:
+        console.print("No opportunities matched the current filters.")
+        raise typer.Exit()
+
+    for i, opp in enumerate(result.opportunities, 1):
+        _print_opportunity(i, opp)
 
 
 @app.command("list")
