@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs `jobs run` (the Phase 4 scheduled discovery + alert pipeline) once
+  each weekday morning via macOS launchd. See docs/alerts.md#scheduling.
+
+  Before installing, replace every /Users/YOUR_USERNAME/... path below
+  with the real absolute paths for your machine, then:
+
+    cp scripts/com.careersos.scheduledrun.plist.example \
+       ~/Library/LaunchAgents/com.careersos.scheduledrun.plist
+    launchctl load ~/Library/LaunchAgents/com.careersos.scheduledrun.plist
+
+  To uninstall:
+
+    launchctl unload ~/Library/LaunchAgents/com.careersos.scheduledrun.plist
+    rm ~/Library/LaunchAgents/com.careersos.scheduledrun.plist
+
+  Note: launchd only runs this while the Mac is powered on and awake at
+  the scheduled time. A run scheduled while the machine is asleep/off is
+  skipped, not queued — see docs/alerts.md#scheduling for why this is an
+  acceptable tradeoff for a passive-mode personal radar.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.careersos.scheduledrun</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/YOUR_USERNAME/Repos/careers-os/.venv/bin/jobs</string>
+        <string>run</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/YOUR_USERNAME/Repos/careers-os</string>
+
+    <!-- Runs Monday-Friday at 8:00am. Add one <dict> per weekday. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Weekday</key>
+            <integer>1</integer>
+            <key>Hour</key>
+            <integer>8</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key>
+            <integer>2</integer>
+            <key>Hour</key>
+            <integer>8</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key>
+            <integer>3</integer>
+            <key>Hour</key>
+            <integer>8</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key>
+            <integer>4</integer>
+            <key>Hour</key>
+            <integer>8</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key>
+            <integer>5</integer>
+            <key>Hour</key>
+            <integer>8</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+
+    <!-- launchd does not load a login shell's environment, so SMTP_*
+         and CAREERS_ALERT_EMAIL must reach the process another way.
+         Careers OS reads its .env via python-dotenv at startup (see
+         cli.py), so running from WorkingDirectory with a real .env
+         present there is sufficient — no EnvironmentVariables block
+         needed here unless you want to override specific values. -->
+
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/Repos/careers-os/logs/scheduled-run.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/Repos/careers-os/logs/scheduled-run.error.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

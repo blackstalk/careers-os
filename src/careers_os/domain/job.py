@@ -51,3 +51,24 @@ class NormalizedJob(BaseModel):
     first_seen_at: Optional[datetime] = None
     last_seen_at: Optional[datetime] = None
     source_updated_at: Optional[datetime] = None
+
+
+def format_compensation(
+    salary_min: Optional[float], salary_max: Optional[float],
+    hourly_min: Optional[float], hourly_max: Optional[float],
+) -> str:
+    """Shared by cli.py's display and notifications/ alert content — a
+    job's compensation is never cross-converted between salary/hourly
+    (see docs/sources/creative-circle.md), so this only ever formats
+    whichever figure the source actually published.
+    """
+    parts = []
+    if salary_min or salary_max:
+        lo = f"${salary_min:,.0f}" if salary_min else "?"
+        hi = f"${salary_max:,.0f}" if salary_max else "?"
+        parts.append(f"{lo}-{hi}/yr")
+    if hourly_min or hourly_max:
+        lo = f"${hourly_min:,.0f}" if hourly_min else "?"
+        hi = f"${hourly_max:,.0f}" if hourly_max else "?"
+        parts.append(f"{lo}-{hi}/hr")
+    return ", ".join(parts) if parts else "(not published)"

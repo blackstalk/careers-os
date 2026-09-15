@@ -282,6 +282,33 @@ class JobEvaluationRecord(Base):
     pursue_factors: Mapped[list] = mapped_column(JSON, default=list)
 
 
+class NotificationRecord(Base):
+    """Append-only record of one alert attempt (Phase 4) — see
+    docs/alerts.md#duplicate-suppression.
+
+    A `status="failed"` row is kept for observability but never counted
+    as "already alerted" — `ingestion/scheduled_run.py` only checks
+    `JobRepository.list_notifications(job_id, status="sent")`, so a
+    transient SMTP failure must not silently suppress a future retry.
+    `pursue_recommendation` records which tier triggered this specific
+    alert, so a later improvement (e.g. pursue -> strong_pursue) can be
+    recognized as alert-worthy again rather than treated as a duplicate.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    evaluation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("job_evaluations.id"), nullable=True)
+
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    channel: Mapped[str] = mapped_column(String)
+    operating_mode: Mapped[str] = mapped_column(String)
+    pursue_recommendation: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String)  # "sent" | "failed"
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
 def _apply_lightweight_migrations(engine: Engine) -> None:
     """Add newly-introduced columns to an already-existing SQLite file.
 

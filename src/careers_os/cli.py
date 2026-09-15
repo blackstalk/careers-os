@@ -7,16 +7,20 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from careers_os.career.preferences import Preferences
 from careers_os.career.resume_import import import_resume_docx
 from careers_os.career.resume_recommendation import recommend_resume_variant
 from careers_os.career.search_profiles import SearchProfilesConfig
 from careers_os.career.timeline import humanize_years
 from careers_os.domain.enums import EmploymentType, JobStatus
+from careers_os.domain.job import format_compensation
 from careers_os.domain.matching import AIAssessmentType, MatchType
 from careers_os.domain.query import JobSearchQuery, SortOrder
 from careers_os.ingestion.discovery import DiscoveryOpportunity, run_discovery
 from careers_os.ingestion.evaluation import evaluate_opportunity
 from careers_os.ingestion.pipeline import IngestionResult, run_search_ingestion
+from careers_os.ingestion.scheduled_run import run_scheduled_pipeline
+from careers_os.notifications.email_channel import EmailNotificationChannel
 from careers_os.observability.logging import configure_logging
 from careers_os.career.evidence_index import EvidenceIndex
 from careers_os.sources.base import JobSource, SourceHealth
@@ -38,6 +42,8 @@ logger = logging.getLogger("careers_os.cli")
 app = typer.Typer(help="Personal AI-assisted job search / career OS — job sources and tracking.")
 search_app = typer.Typer(help="Search a job source and ingest results.")
 app.add_typer(search_app, name="search")
+notifications_app = typer.Typer(help="Manage and test alert notification delivery.")
+app.add_typer(notifications_app, name="notifications")
 console = Console()
 
 careers_app = typer.Typer(help="Manage your resume/experience/evidence data.")
@@ -63,16 +69,7 @@ def _evidence_index() -> EvidenceIndex:
 
 
 def _comp_str(job) -> str:
-    parts = []
-    if job.salary_min or job.salary_max:
-        lo = f"${job.salary_min:,.0f}" if job.salary_min else "?"
-        hi = f"${job.salary_max:,.0f}" if job.salary_max else "?"
-        parts.append(f"{lo}-{hi}/yr")
-    if job.hourly_min or job.hourly_max:
-        lo = f"${job.hourly_min:,.0f}" if job.hourly_min else "?"
-        hi = f"${job.hourly_max:,.0f}" if job.hourly_max else "?"
-        parts.append(f"{lo}-{hi}/hr")
-    return ", ".join(parts) if parts else "(not published)"
+    return format_compensation(job.salary_min, job.salary_max, job.hourly_min, job.hourly_max)
 
 
 def _print_health_line(label: str, health: SourceHealth, jobs_discovered: int, new: int, updated: int, errors: int) -> None:
@@ -412,6 +409,149 @@ def discover(
 
     for i, opp in enumerate(result.opportunities, 1):
         _print_opportunity(i, opp)
+
+
+_ALERT_OUTCOME_LABEL = {
+    "sent": "[green]✓ sent[/green]",
+    "failed": "[red]✗ failed[/red]",
+    "suppressed_duplicate": "[yellow]- suppressed (already alerted)[/yellow]",
+    "dry_run": "[cyan]would send[/cyan]",
+}
+
+
+@app.command("run")
+def run_scheduled(
+    profile: list[str] = typer.Option(
+        None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
+    ),
+    source: Optional[str] = typer.Option(
+        None, "--source", help="Limit to 'creative-circle' or 'greenhouse'. Default: both."
+    ),
+    remote: bool = typer.Option(False, "--remote", help="Remote-only."),
+    employment_type: list[EmploymentType] = typer.Option(
+        None, "--employment-type", help="Override the profile config's default employment-type filter."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview alerts without sending email or persisting notification state."
+    ),
+    ai: bool = typer.Option(True, "--ai/--no-ai", help="Use AI evaluation if ANTHROPIC_API_KEY is set."),
+) -> None:
+    """Run the full scheduled pipeline: discover across every enabled
+    profile/source, evaluate through the existing decision pipeline, and
+    email any opportunity that crosses your operating mode's alert
+    threshold — skipping ones already alerted. Intended for unattended
+    scheduling (cron/launchd); see docs/alerts.md.
+
+    Example:
+        jobs run --dry-run
+        jobs run
+    """
+    if source is not None and source not in ("creative-circle", "greenhouse"):
+        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle or greenhouse)")
+        raise typer.Exit(code=1)
+
+    profiles_config = SearchProfilesConfig.load()
+    try:
+        profiles = profiles_config.enabled_profiles(profile or None)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    if not profiles:
+        console.print("No search profiles enabled.")
+        raise typer.Exit()
+
+    employment_types = employment_type or profiles_config.default_employment_types
+    preferences = Preferences.load()
+
+    sources: list[tuple[str, JobSource]] = []
+    if source in (None, "creative-circle"):
+        sources.append(("creative_circle", CreativeCircleSource()))
+    if source in (None, "greenhouse"):
+        for board in GreenhouseBoardsConfig.load().boards:
+            sources.append(("greenhouse", GreenhouseSource(board)))
+
+    mode_label = f"{preferences.operating_mode.value}{' — DRY RUN' if dry_run else ''}"
+    console.print(f"[bold]CAREER OS — SCHEDULED RUN[/bold] (mode: {mode_label})")
+
+    channel = None
+    if not dry_run:
+        channel = EmailNotificationChannel.from_env()
+        if channel is None:
+            console.print(
+                "[yellow]No SMTP configuration found (see .env.example) — evaluation will run, "
+                "but no notification can be sent this run.[/yellow]"
+            )
+
+    repo = _repository()
+    evidence_index = _evidence_index()
+    try:
+        result = run_scheduled_pipeline(
+            repo, sources, profiles, dry_run=dry_run, channel=channel,
+            remote_only=remote, employment_types=employment_types, use_ai=ai,
+            preferences=preferences, evidence_index=evidence_index,
+        )
+    finally:
+        for _family, src in sources:
+            src.close()
+
+    m = result.metrics
+    console.print(f"Jobs discovered: {m.jobs_discovered}")
+    console.print(f"Jobs evaluated: {m.jobs_evaluated}")
+    console.print(f"Eligible: {m.eligible_count}")
+    console.print(f"Meeting pursue threshold (pursue/strong_pursue): {m.pursue_threshold_count}")
+    console.print(f"Meeting alert threshold ({preferences.operating_mode.value} mode): {m.alert_threshold_count}")
+    console.print(f"Notifications attempted: {m.notifications_attempted}")
+    console.print(f"Notifications sent: {m.notifications_sent}")
+    console.print(f"Suppressed as duplicates: {m.notifications_suppressed_duplicate}")
+    console.print(f"Failures: {m.failures}")
+    for note in result.notes:
+        console.print(f"[yellow]note:[/yellow] {note}")
+
+    if m.alert_threshold_count == 0:
+        console.print(
+            f"\n{m.jobs_evaluated} opportunities evaluated. "
+            f"No opportunities met {preferences.operating_mode.value} alert threshold."
+        )
+        return
+
+    console.print("\n[bold]Alert outcomes:[/bold]")
+    for outcome in result.alerts:
+        label = _ALERT_OUTCOME_LABEL.get(outcome.status, outcome.status)
+        job = outcome.opportunity.job
+        line = f"  {label}  {job.title} — {job.company or 'unknown'} ({job.source})"
+        if outcome.error:
+            line += f"  [red]{outcome.error}[/red]"
+        console.print(line)
+        if dry_run and outcome.status == "dry_run":
+            console.print(f"    {outcome.content.subject}")
+            for reason in outcome.content.reasons:
+                console.print(f"      + {reason}")
+            for watchout in outcome.content.watchouts:
+                console.print(f"      ! {watchout}")
+
+
+@notifications_app.command("test")
+def notifications_test() -> None:
+    """Send a clearly-labeled test email through the configured SMTP
+    settings — verifies environment configuration, connectivity,
+    authentication, and delivery without needing a real discovered
+    opportunity. See docs/alerts.md#email-configuration.
+    """
+    channel = EmailNotificationChannel.from_env()
+    if channel is None:
+        console.print(
+            "[red]SMTP is not configured.[/red] Set SMTP_HOST, SMTP_PORT, SMTP_USERNAME, "
+            "SMTP_PASSWORD, SMTP_FROM, and CAREERS_ALERT_EMAIL (see .env.example)."
+        )
+        raise typer.Exit(code=1)
+
+    console.print(f"Sending test email via {channel.config.host}:{channel.config.port} to {channel.config.to_address}...")
+    result = channel.send_test_email()
+    if result.success:
+        console.print("[green]Test email sent successfully.[/green]")
+    else:
+        console.print(f"[red]Test email failed: {result.error}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command("list")

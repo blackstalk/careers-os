@@ -35,3 +35,14 @@ class SourceHealthStatus(str, Enum):
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     BROKEN = "broken"
+
+
+class OperatingMode(str, Enum):
+    """How aggressively Careers OS surfaces opportunities for alerting —
+    see docs/alerts.md#operating-modes. Centralized here (not scattered
+    through notification code) so a future mode doesn't require touching
+    the alert policy's decision logic, only its config.
+    """
+
+    PASSIVE = "passive"
+    ACTIVE = "active"

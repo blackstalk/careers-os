@@ -16,6 +16,7 @@ from careers_os.storage.db import (
     JobEvaluationRecord,
     JobRecord,
     JobScoreRecord,
+    NotificationRecord,
     PossibleDuplicateRecord,
     RawJobRecord,
 )
@@ -236,6 +237,42 @@ class JobRepository:
             .limit(1)
         )
         return self.session.execute(stmt).scalar_one_or_none()
+
+    def record_notification(
+        self,
+        job_id: int,
+        *,
+        evaluation_id: Optional[int],
+        channel: str,
+        operating_mode: str,
+        pursue_recommendation: str,
+        status: str,
+        error: Optional[str] = None,
+    ) -> NotificationRecord:
+        """Pure persistence — no alert-policy knowledge here (see
+        notifications/policy.py for the ranking/threshold logic and
+        ingestion/scheduled_run.py for how it's combined with
+        `list_notifications` to decide whether to suppress a duplicate).
+        """
+        record = NotificationRecord(
+            job_id=job_id,
+            evaluation_id=evaluation_id,
+            sent_at=datetime.now(timezone.utc),
+            channel=channel,
+            operating_mode=operating_mode,
+            pursue_recommendation=pursue_recommendation,
+            status=status,
+            error=error,
+        )
+        self.session.add(record)
+        self.session.flush()
+        return record
+
+    def list_notifications(self, job_id: int, *, status: Optional[str] = None) -> list[NotificationRecord]:
+        stmt = select(NotificationRecord).where(NotificationRecord.job_id == job_id)
+        if status:
+            stmt = stmt.where(NotificationRecord.status == status)
+        return list(self.session.execute(stmt).scalars().all())
 
     def list_duplicates(self) -> list[PossibleDuplicateRecord]:
         return list(self.session.execute(select(PossibleDuplicateRecord)).scalars().all())

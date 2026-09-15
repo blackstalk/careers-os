@@ -49,3 +49,20 @@ discovery_ranking_weights:
   bridge_role: 0.20
   immediate_opportunity: 0.25
   career_direction: 0.15
+
+# How aggressively `jobs run` (scheduled discovery) surfaces opportunities
+# by email — see docs/alerts.md. Switching to `active` later needs no
+# code change, only this value.
+operating_mode: passive
+
+alert_policy:
+  # The pursue-recommendation floor required to send an alert. Never a
+  # separate score — this is a threshold on the existing pursue-worthiness
+  # decision (career/pursue.py), so an opportunity can't get alerted just
+  # for high compensation, a keyword match, or plain eligibility.
+  # `verify_first` and `do_not_pursue` are never alert-eligible in either
+  # mode, regardless of this setting.
+  passive:
+    minimum_pursue: strong_pursue
+  active:
+    minimum_pursue: pursue

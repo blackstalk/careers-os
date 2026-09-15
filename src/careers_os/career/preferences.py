@@ -4,6 +4,9 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel
 
+from careers_os.domain.enums import OperatingMode
+from careers_os.domain.opportunity_decision import PursueRecommendation
+
 DEFAULT_PREFERENCES_PATH = Path(__file__).parent / "data" / "preferences.yaml"
 
 
@@ -70,12 +73,32 @@ class FreshnessThresholds(BaseModel):
     aging_days: int = 90
 
 
+class AlertModeSettings(BaseModel):
+    """The pursue-recommendation floor required to send an alert in one
+    operating mode — see docs/alerts.md#operating-modes. Deliberately just a
+    `PursueRecommendation` value, not a new score: alert-worthiness is a
+    threshold on the *existing* decision layer, never a competing model.
+    """
+
+    minimum_pursue: PursueRecommendation
+
+
+class AlertPolicy(BaseModel):
+    passive: AlertModeSettings
+    active: AlertModeSettings
+
+    def for_mode(self, mode: OperatingMode) -> AlertModeSettings:
+        return self.passive if mode == OperatingMode.PASSIVE else self.active
+
+
 class Preferences(BaseModel):
     compensation: CompensationPreferences
     work_arrangement: WorkArrangementPreferences
     component_weights: ComponentWeights
     discovery_ranking_weights: Optional[DiscoveryRankingWeights] = None
     freshness_thresholds: Optional[FreshnessThresholds] = None
+    operating_mode: OperatingMode = OperatingMode.PASSIVE
+    alert_policy: Optional[AlertPolicy] = None
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "Preferences":
