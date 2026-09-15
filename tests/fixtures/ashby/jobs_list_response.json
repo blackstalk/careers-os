@@ -1,0 +1,102 @@
+{
+  "apiVersion": 1,
+  "jobs": [
+    {
+      "id": "job-001",
+      "title": "Forward Deployed Engineer, Enterprise",
+      "department": "Go To Market",
+      "team": "Solutions Engineering",
+      "employmentType": "FullTime",
+      "location": "San Francisco",
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-10T13:00:00.000Z",
+      "isListed": true,
+      "isRemote": null,
+      "workplaceType": "Hybrid",
+      "address": {"postalAddress": {"addressLocality": "San Francisco", "addressRegion": "California", "addressCountry": "United States"}},
+      "jobUrl": "https://jobs.ashbyhq.com/exampleai/job-001",
+      "applyUrl": "https://jobs.ashbyhq.com/exampleai/job-001/application",
+      "descriptionHtml": "<p>Own solution architecture for enterprise customers.</p>",
+      "descriptionPlain": "Own solution architecture for enterprise customers.",
+      "compensation": {
+        "compensationTierSummary": "$180K – $220K",
+        "scrapeableCompensationSalarySummary": "$180K - $220K",
+        "compensationTiers": [
+          {
+            "id": "tier-1",
+            "tierSummary": "$180K – $220K",
+            "title": "San Francisco",
+            "components": [
+              {"id": "comp-1", "compensationType": "Salary", "currencyCode": "USD", "interval": "1 YEAR", "minValue": 180000, "maxValue": 220000}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "job-002",
+      "title": "Remote Customer Engineer",
+      "department": "Customer Success",
+      "team": "Customer Engineering",
+      "employmentType": "FullTime",
+      "location": "Remote-Friendly, United States",
+      "secondaryLocations": [],
+      "publishedAt": "2026-08-01T13:00:00.000Z",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {"postalAddress": {"addressCountry": "United States"}},
+      "jobUrl": "https://jobs.ashbyhq.com/exampleai/job-002",
+      "applyUrl": "https://jobs.ashbyhq.com/exampleai/job-002/application",
+      "descriptionHtml": "<p>Support customers remotely with integrations and APIs.</p>",
+      "descriptionPlain": "Support customers remotely with integrations and APIs.",
+      "compensation": null
+    },
+    {
+      "id": "job-003",
+      "title": "Contract Data Analyst",
+      "department": "Data",
+      "team": "Analytics",
+      "employmentType": "Contract",
+      "location": "New York, NY",
+      "secondaryLocations": [],
+      "publishedAt": "2026-01-05T13:00:00.000Z",
+      "isListed": true,
+      "isRemote": null,
+      "workplaceType": null,
+      "address": {"postalAddress": {"addressLocality": "New York", "addressRegion": "New York", "addressCountry": "United States"}},
+      "jobUrl": "https://jobs.ashbyhq.com/exampleai/job-003",
+      "applyUrl": "https://jobs.ashbyhq.com/exampleai/job-003/application",
+      "descriptionHtml": "<p>Analyze data for internal stakeholders.</p>",
+      "descriptionPlain": "Analyze data for internal stakeholders.",
+      "compensation": null
+    },
+    {
+      "id": "job-004",
+      "title": "Onsite Office Manager",
+      "department": "Operations",
+      "team": "Facilities",
+      "employmentType": "FullTime",
+      "location": "Austin, TX",
+      "secondaryLocations": [],
+      "publishedAt": "2026-09-13T13:00:00.000Z",
+      "isListed": true,
+      "isRemote": null,
+      "workplaceType": "Onsite",
+      "address": {"postalAddress": {"addressLocality": "Austin", "addressRegion": "Texas", "addressCountry": "United States"}},
+      "jobUrl": "https://jobs.ashbyhq.com/exampleai/job-004",
+      "applyUrl": "https://jobs.ashbyhq.com/exampleai/job-004/application",
+      "descriptionHtml": "<p>No compensation figure mentioned here at all.</p>",
+      "descriptionPlain": "No compensation figure mentioned here at all.",
+      "compensation": null
+    },
+    {
+      "title": "Malformed Listing Missing Id Field Placeholder",
+      "employmentType": "FullTime",
+      "location": "Remote",
+      "publishedAt": "2026-09-01T13:00:00.000Z",
+      "jobUrl": "https://jobs.ashbyhq.com/exampleai/job-005",
+      "descriptionPlain": "placeholder"
+    }
+  ]
+}

@@ -7,16 +7,21 @@ from careers_os.domain.enums import EmploymentType
 class TestSearchProfilesConfig:
     def test_loads_default_profiles(self):
         config = SearchProfilesConfig.load()
-        assert set(config.profiles) == {"php", "laravel", "craft", "wordpress"}
+        assert set(config.profiles) == {"php", "laravel", "craft", "wordpress", "fde"}
 
     def test_each_profile_has_at_least_one_query(self):
         config = SearchProfilesConfig.load()
         for profile in config.profiles.values():
             assert len(profile.queries) >= 1
 
-    def test_default_employment_types_exclude_full_time(self):
+    def test_default_employment_types_include_full_time(self):
+        # Full-time was deliberately added (see search_profiles.yaml's
+        # comment and docs/discovery.md#employment-type-policy) — a
+        # compelling full-time role should reach the same eligibility ->
+        # qualification -> pursue -> alert pipeline as everything else,
+        # not be hidden before it ever gets evaluated.
         config = SearchProfilesConfig.load()
-        assert EmploymentType.FULL_TIME not in config.default_employment_types
+        assert EmploymentType.FULL_TIME in config.default_employment_types
         assert EmploymentType.CONTRACT in config.default_employment_types
         assert EmploymentType.FREELANCE in config.default_employment_types
         assert EmploymentType.PART_TIME in config.default_employment_types

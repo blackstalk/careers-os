@@ -25,30 +25,52 @@ profiles:
   wordpress:
     enabled: true
     queries: [WordPress]
+  fde:
+    enabled: true
+    queries: ["Forward Deployed", "Solutions Architect", "Applied AI", ...]
 
-default_employment_types: [contract, freelance, part_time, unknown]
+default_employment_types: [full_time, contract, freelance, part_time, unknown]
 ```
 
 Each profile is one or more independent keyword queries — a job matching
 **any one** query from **any one** profile is discovered; nothing requires
-matching all four. `career/search_profiles.py::SearchProfilesConfig`
+matching all of them. `career/search_profiles.py::SearchProfilesConfig`
 loads this; `jobs discover --profile <name>` (repeatable) runs a specific
 subset, overriding a profile's own `enabled: false` if named explicitly.
 
-### Why `unknown` is in the default employment-type filter
+### Employment-type policy
 
 The initial version of this file only listed `contract`, `freelance`,
 `part_time` — matching the stated goal of testing the market without
 giving up a current full-time role. A live discovery run immediately
-exposed the problem: Greenhouse almost never exposes `employment_type` at
+exposed a problem: Greenhouse almost never exposes `employment_type` at
 all (see docs/sources/greenhouse.md), so nearly every Greenhouse posting
 normalizes to `unknown` — and a strict allowlist silently hid a genuinely
 interesting 56%-fit Stripe match for that reason alone. Excluding a role
 because the *source* didn't publish a field is exactly the thing this
 project has refused to do everywhere else (missing compensation, missing
 remote status, etc. — see docs/scoring.md). `unknown` was added to the
-default for consistency; `full_time` remains excluded by default since
-that's a real, known, deliberate signal, not a gap.
+default for consistency; `full_time` remained excluded at that point,
+since it was a real, known, deliberate signal, not a gap.
+
+Phase 4's Ashby/Lever sources (docs/sources/ashby.md,
+docs/sources/lever.md) target Forward Deployed Engineer/Solutions
+Architect/Applied AI/ML Systems roles, which are almost entirely
+`full_time` — so `full_time` was added to the default too. The
+reasoning changed along with it: "full_time" was originally being used
+as a rough proxy for "not interesting right now," but the project has
+since built an entire decision-intelligence layer
+(docs/pursue-recommendation.md) specifically to answer "is this
+opportunity worth my attention" with actual evidence — eligibility,
+qualification, transferable fit, career direction, opportunity value —
+rather than a blunt field-value filter. A sufficiently compelling
+full-time role (including one using PHP/Laravel/Craft skills already on
+the resume, discovered via the *existing* profiles) is exactly the kind
+of opportunity worth surfacing as a potential replacement for the
+current role, not something to hide before it's ever evaluated.
+`full_time` gets no scoring advantage for being full-time — it simply
+reaches the same pipeline, and the same passive-mode `strong_pursue`
+alert threshold (docs/alerts.md), as everything else.
 
 ## The discovery command
 

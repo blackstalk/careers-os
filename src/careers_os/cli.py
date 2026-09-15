@@ -23,10 +23,14 @@ from careers_os.ingestion.scheduled_run import run_scheduled_pipeline
 from careers_os.notifications.email_channel import EmailNotificationChannel
 from careers_os.observability.logging import configure_logging
 from careers_os.career.evidence_index import EvidenceIndex
+from careers_os.sources.ashby.config import AshbyBoardsConfig
+from careers_os.sources.ashby.source import AshbySource
 from careers_os.sources.base import JobSource, SourceHealth
 from careers_os.sources.creative_circle.source import CreativeCircleSource
 from careers_os.sources.greenhouse.config import GreenhouseBoardsConfig
 from careers_os.sources.greenhouse.source import GreenhouseSource
+from careers_os.sources.lever.config import LeverCompaniesConfig
+from careers_os.sources.lever.source import LeverSource
 from careers_os.storage.db import get_engine, get_session
 from careers_os.storage.repository import (
     JobRepository,
@@ -256,6 +260,176 @@ def search_greenhouse_all(
     _print_results_table(combined)
 
 
+@search_app.command("ashby")
+def search_ashby(
+    board: str = typer.Option(..., "--board", help="Ashby job-board name, e.g. 'openai'."),
+    query: Optional[str] = typer.Option(None, "--query", help="Keyword/title search (client-side)."),
+    location: Optional[str] = typer.Option(None, "--location", help="Location text search (client-side)."),
+    remote: bool = typer.Option(False, "--remote", help="Remote-only (workplaceType/isRemote detection)."),
+    days: Optional[int] = typer.Option(None, "--days", help="Posted within N days."),
+    employment_type: Optional[EmploymentType] = typer.Option(
+        None, "--employment-type", help="full_time, contract, etc. (structured field)."
+    ),
+    sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
+    limit: int = typer.Option(20, "--limit", help="Max results per page."),
+    score: bool = typer.Option(True, "--score/--no-score"),
+    ai: bool = typer.Option(True, "--ai/--no-ai"),
+) -> None:
+    """Search one Ashby job board and ingest/normalize/score real results.
+
+    Note: Ashby's public Job Postings API has no server-side search or
+    filtering — every filter here runs client-side over that board's full
+    posting list (see docs/sources/ashby.md).
+
+    Example:
+        jobs search ashby --board openai --query "solutions architect"
+    """
+    search_query = _build_query(query, location, remote, days, employment_type, sort, limit)
+
+    repo = _repository()
+    with AshbySource(board) as source:
+        result = run_search_ingestion(
+            source, search_query, repo, score=score, use_ai=ai, evidence_index=_evidence_index()
+        )
+        health = source.health()
+
+    _print_health_line(
+        f"Ashby ({board})", health, result.jobs_discovered, result.jobs_new,
+        result.jobs_updated, result.parser_errors,
+    )
+    _print_results_table(result.ranked_jobs)
+
+
+@search_app.command("ashby-all")
+def search_ashby_all(
+    query: Optional[str] = typer.Option(None, "--query"),
+    location: Optional[str] = typer.Option(None, "--location"),
+    remote: bool = typer.Option(False, "--remote"),
+    days: Optional[int] = typer.Option(None, "--days"),
+    employment_type: Optional[EmploymentType] = typer.Option(None, "--employment-type"),
+    sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
+    limit: int = typer.Option(20, "--limit", help="Max results per board."),
+    score: bool = typer.Option(True, "--score/--no-score"),
+    ai: bool = typer.Option(True, "--ai/--no-ai"),
+) -> None:
+    """Search every board configured in sources/ashby/boards.yaml.
+
+    Each board is its own AshbySource instance (see source.py) — this
+    command just loops over them and merges the ranked results for display.
+    """
+    search_query = _build_query(query, location, remote, days, employment_type, sort, limit)
+    boards = AshbyBoardsConfig.load().boards
+
+    repo = _repository()
+    evidence_index = _evidence_index()  # loaded once, reused across every board
+    combined: list = []
+    for board in boards:
+        with AshbySource(board) as source:
+            try:
+                result: IngestionResult = run_search_ingestion(
+                    source, search_query, repo, score=score, use_ai=ai,
+                    evidence_index=evidence_index,
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad board shouldn't kill the rest
+                console.print(f"[red]{board}: {exc}[/red]")
+                continue
+            health = source.health()
+        _print_health_line(
+            f"Ashby ({board})", health, result.jobs_discovered, result.jobs_new,
+            result.jobs_updated, result.parser_errors,
+        )
+        combined.extend(result.ranked_jobs)
+
+    combined.sort(key=lambda r: r.fit.overall_fit if r.fit else 0.0, reverse=True)
+    console.print()
+    _print_results_table(combined)
+
+
+@search_app.command("lever")
+def search_lever(
+    company: str = typer.Option(..., "--company", help="Lever company slug, e.g. 'palantir'."),
+    query: Optional[str] = typer.Option(None, "--query", help="Keyword/title search (client-side)."),
+    location: Optional[str] = typer.Option(None, "--location", help="Location text search (client-side)."),
+    remote: bool = typer.Option(False, "--remote", help="Remote-only (best-effort detection)."),
+    days: Optional[int] = typer.Option(None, "--days", help="Posted within N days."),
+    employment_type: Optional[EmploymentType] = typer.Option(
+        None, "--employment-type", help="full_time, contract, etc. (best-effort detection)."
+    ),
+    sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
+    limit: int = typer.Option(20, "--limit", help="Max results per page."),
+    score: bool = typer.Option(True, "--score/--no-score"),
+    ai: bool = typer.Option(True, "--ai/--no-ai"),
+) -> None:
+    """Search one Lever company board and ingest/normalize/score real results.
+
+    Note: Lever's public Postings API has no server-side keyword search —
+    every filter here runs client-side over that company's full posting
+    list (see docs/sources/lever.md).
+
+    Example:
+        jobs search lever --company palantir --query "forward deployed"
+    """
+    search_query = _build_query(query, location, remote, days, employment_type, sort, limit)
+
+    repo = _repository()
+    with LeverSource(company) as source:
+        result = run_search_ingestion(
+            source, search_query, repo, score=score, use_ai=ai, evidence_index=_evidence_index()
+        )
+        health = source.health()
+
+    _print_health_line(
+        f"Lever ({company})", health, result.jobs_discovered, result.jobs_new,
+        result.jobs_updated, result.parser_errors,
+    )
+    _print_results_table(result.ranked_jobs)
+
+
+@search_app.command("lever-all")
+def search_lever_all(
+    query: Optional[str] = typer.Option(None, "--query"),
+    location: Optional[str] = typer.Option(None, "--location"),
+    remote: bool = typer.Option(False, "--remote"),
+    days: Optional[int] = typer.Option(None, "--days"),
+    employment_type: Optional[EmploymentType] = typer.Option(None, "--employment-type"),
+    sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
+    limit: int = typer.Option(20, "--limit", help="Max results per company."),
+    score: bool = typer.Option(True, "--score/--no-score"),
+    ai: bool = typer.Option(True, "--ai/--no-ai"),
+) -> None:
+    """Search every company configured in sources/lever/companies.yaml.
+
+    Each company is its own LeverSource instance (see source.py) — this
+    command just loops over them and merges the ranked results for display.
+    """
+    search_query = _build_query(query, location, remote, days, employment_type, sort, limit)
+    companies = LeverCompaniesConfig.load().companies
+
+    repo = _repository()
+    evidence_index = _evidence_index()  # loaded once, reused across every company
+    combined: list = []
+    for company in companies:
+        with LeverSource(company) as source:
+            try:
+                result: IngestionResult = run_search_ingestion(
+                    source, search_query, repo, score=score, use_ai=ai,
+                    evidence_index=evidence_index,
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad company shouldn't kill the rest
+                console.print(f"[red]{company}: {exc}[/red]")
+                continue
+            health = source.health()
+        _print_health_line(
+            f"Lever ({company})", health, result.jobs_discovered, result.jobs_new,
+            result.jobs_updated, result.parser_errors,
+        )
+        combined.extend(result.ranked_jobs)
+
+    combined.sort(key=lambda r: r.fit.overall_fit if r.fit else 0.0, reverse=True)
+    console.print()
+    _print_results_table(combined)
+
+
 _PURSUE_COLOR = {
     "strong_pursue": "bold green",
     "pursue": "green",
@@ -319,7 +493,7 @@ def discover(
         None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
     ),
     source: Optional[str] = typer.Option(
-        None, "--source", help="Limit to 'creative-circle' or 'greenhouse'. Default: both."
+        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', or 'lever'. Default: all."
     ),
     remote: bool = typer.Option(False, "--remote", help="Remote-only."),
     employment_type: list[EmploymentType] = typer.Option(
@@ -346,8 +520,8 @@ def discover(
         jobs discover
         jobs discover --profile laravel --profile craft --remote --limit 10
     """
-    if source is not None and source not in ("creative-circle", "greenhouse"):
-        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle or greenhouse)")
+    if source is not None and source not in ("creative-circle", "greenhouse", "ashby", "lever"):
+        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle, greenhouse, ashby, or lever)")
         raise typer.Exit(code=1)
 
     profiles_config = SearchProfilesConfig.load()
@@ -368,6 +542,12 @@ def discover(
     if source in (None, "greenhouse"):
         for board in GreenhouseBoardsConfig.load().boards:
             sources.append(("greenhouse", GreenhouseSource(board)))
+    if source in (None, "ashby"):
+        for board in AshbyBoardsConfig.load().boards:
+            sources.append(("ashby", AshbySource(board)))
+    if source in (None, "lever"):
+        for company in LeverCompaniesConfig.load().companies:
+            sources.append(("lever", LeverSource(company)))
 
     console.print("[bold]CAREER OS — DISCOVERY[/bold]")
     console.print(
@@ -425,7 +605,7 @@ def run_scheduled(
         None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
     ),
     source: Optional[str] = typer.Option(
-        None, "--source", help="Limit to 'creative-circle' or 'greenhouse'. Default: both."
+        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', or 'lever'. Default: all."
     ),
     remote: bool = typer.Option(False, "--remote", help="Remote-only."),
     employment_type: list[EmploymentType] = typer.Option(
@@ -446,8 +626,8 @@ def run_scheduled(
         jobs run --dry-run
         jobs run
     """
-    if source is not None and source not in ("creative-circle", "greenhouse"):
-        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle or greenhouse)")
+    if source is not None and source not in ("creative-circle", "greenhouse", "ashby", "lever"):
+        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle, greenhouse, ashby, or lever)")
         raise typer.Exit(code=1)
 
     profiles_config = SearchProfilesConfig.load()
@@ -469,6 +649,12 @@ def run_scheduled(
     if source in (None, "greenhouse"):
         for board in GreenhouseBoardsConfig.load().boards:
             sources.append(("greenhouse", GreenhouseSource(board)))
+    if source in (None, "ashby"):
+        for board in AshbyBoardsConfig.load().boards:
+            sources.append(("ashby", AshbySource(board)))
+    if source in (None, "lever"):
+        for company in LeverCompaniesConfig.load().companies:
+            sources.append(("lever", LeverSource(company)))
 
     mode_label = f"{preferences.operating_mode.value}{' — DRY RUN' if dry_run else ''}"
     console.print(f"[bold]CAREER OS — SCHEDULED RUN[/bold] (mode: {mode_label})")
@@ -978,8 +1164,10 @@ def set_status(source: str, source_job_id: str, status: JobStatus) -> None:
 
 @app.command("health")
 def health(
-    source_name: str = typer.Argument("creative-circle", help="creative-circle or greenhouse"),
-    board: Optional[str] = typer.Option(None, "--board", help="Required when source_name is greenhouse."),
+    source_name: str = typer.Argument("creative-circle", help="creative-circle, greenhouse, ashby, or lever"),
+    board: Optional[str] = typer.Option(
+        None, "--board", help="Required when source_name is greenhouse, ashby, or lever."
+    ),
 ) -> None:
     """Report a source adapter's current health (after a throwaway probe search)."""
     if source_name == "creative-circle":
@@ -989,6 +1177,16 @@ def health(
             console.print("[red]--board is required for greenhouse[/red]")
             raise typer.Exit(code=1)
         source_cm = GreenhouseSource(board)
+    elif source_name == "ashby":
+        if not board:
+            console.print("[red]--board is required for ashby[/red]")
+            raise typer.Exit(code=1)
+        source_cm = AshbySource(board)
+    elif source_name == "lever":
+        if not board:
+            console.print("[red]--board is required for lever (company slug)[/red]")
+            raise typer.Exit(code=1)
+        source_cm = LeverSource(board)
     else:
         console.print(f"[red]Unknown source: {source_name}[/red]")
         raise typer.Exit(code=1)

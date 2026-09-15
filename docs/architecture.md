@@ -17,17 +17,21 @@ company careers page, or manual entry. No package outside
 flowchart TD
     CC[Creative Circle] -->|undocumented JSON API| CCSource[CreativeCircleSource]
     GH[Greenhouse] -->|documented Job Board API| GHSource[GreenhouseSource]
+    AS[Ashby] -->|documented public Job Postings API| ASSource[AshbySource]
+    LV[Lever] -->|public Postings API| LVSource[LeverSource]
 
     subgraph Source Adapters
         CCSource
         GHSource
-        LV[Lever adapter — future]
-        LI[LinkedIn adapter — future]
+        ASSource
+        LVSource
+        LI[LinkedIn adapter — not viable, see docs/source-evaluation.md]
     end
 
     CCSource --> Raw[RawJob]
     GHSource --> Raw
-    LV -. same JobSource contract .-> Raw
+    ASSource --> Raw
+    LVSource --> Raw
     LI -. same JobSource contract .-> Raw
 
     Raw --> Norm[source.normalize]
@@ -116,6 +120,10 @@ src/careers_os/
       constants.py, client.py, parser.py, source.py
     greenhouse/        second adapter — all Greenhouse-specific code lives here only
       constants.py, client.py, parser.py, source.py, config.py, boards.yaml
+    ashby/             third adapter — all Ashby-specific code lives here only
+      constants.py, client.py, parser.py, source.py, config.py, boards.yaml
+    lever/             fourth adapter — all Lever-specific code lives here only
+      constants.py, client.py, parser.py, source.py, config.py, companies.yaml
 
   career/              what I'm targeting, what I've done, and what I'll accept — config + parsing, not scoring logic
     profile.py, preferences.py, candidate.py    data/profile.yaml, data/preferences.yaml, data/candidate.yaml

@@ -1,0 +1,18 @@
+# Ashby job-board names to search by default (used by `jobs search
+# ashby-all` and as the default set for validating the adapter). A board
+# name is the company-identifying slug in
+# https://api.ashbyhq.com/posting-api/job-board/<name> — usually, but not
+# always, the same as the company's public careers-page slug.
+#
+# Chosen for strong coverage of Forward Deployed Engineer, Solutions
+# Architect, Applied AI, and ML Systems roles (see docs/sources/ashby.md)
+# — not a general "companies I like" list.
+#
+# Edit this file to track whichever companies you're actually watching.
+# `jobs search ashby --board <name> ...` works for any valid board name
+# without needing to be listed here first.
+boards:
+  - openai
+  - ramp
+  - perplexity
+  - workos

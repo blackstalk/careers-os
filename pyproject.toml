@@ -35,6 +35,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "live: hits real external APIs (Creative Circle, Greenhouse) — excluded by default",
+    "live: hits real external APIs (Creative Circle, Greenhouse, Ashby, Lever) — excluded by default",
 ]
 addopts = "-m 'not live'"

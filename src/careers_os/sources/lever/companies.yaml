@@ -1,0 +1,15 @@
+# Lever company slugs to search by default (used by `jobs search
+# lever-all` and as the default set for validating the adapter). A slug
+# is the company-identifying token in
+# https://api.lever.co/v0/postings/<slug> — usually, but not always, the
+# same as the company's public careers-page slug.
+#
+# Palantir is the company that coined "Forward Deployed Engineer" and
+# posts a large volume of exactly-matching roles on its Lever board (see
+# docs/sources/lever.md) — not a general "companies I like" list.
+#
+# Edit this file to track whichever companies you're actually watching.
+# `jobs search lever --company <slug> ...` works for any valid slug
+# without needing to be listed here first.
+companies:
+  - palantir

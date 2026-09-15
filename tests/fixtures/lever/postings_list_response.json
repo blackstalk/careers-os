@@ -1,0 +1,57 @@
+[
+  {
+    "id": "posting-001",
+    "text": "Forward Deployed Engineer, Enterprise",
+    "categories": {"commitment": "Full-time", "location": "San Francisco, CA", "team": "Delta", "allLocations": ["San Francisco, CA"]},
+    "country": "US",
+    "workplaceType": "hybrid",
+    "createdAt": 1789045200000,
+    "hostedUrl": "https://jobs.lever.co/exampleai/posting-001",
+    "applyUrl": "https://jobs.lever.co/exampleai/posting-001/apply",
+    "descriptionPlain": "Own solution architecture for enterprise customers.",
+    "additionalPlain": "Salary\n \nThe estimated salary range for this position is estimated to be $180,000 - $220,000/year."
+  },
+  {
+    "id": "posting-002",
+    "text": "Remote Customer Engineer",
+    "categories": {"commitment": "Full-time", "location": "Remote-Friendly, United States", "team": "Customer Engineering", "allLocations": ["Remote-Friendly, United States"]},
+    "country": "US",
+    "workplaceType": "remote",
+    "createdAt": 1785589200000,
+    "hostedUrl": "https://jobs.lever.co/exampleai/posting-002",
+    "applyUrl": "https://jobs.lever.co/exampleai/posting-002/apply",
+    "descriptionPlain": "Support customers remotely with integrations and APIs.",
+    "additionalPlain": null
+  },
+  {
+    "id": "posting-003",
+    "text": "Contract Data Analyst",
+    "categories": {"commitment": "Contract", "location": "New York, NY", "team": "Analytics", "allLocations": ["New York, NY"]},
+    "country": "US",
+    "workplaceType": null,
+    "createdAt": 1767618000000,
+    "hostedUrl": "https://jobs.lever.co/exampleai/posting-003",
+    "applyUrl": "https://jobs.lever.co/exampleai/posting-003/apply",
+    "descriptionPlain": "Analyze data for internal stakeholders.",
+    "additionalPlain": null
+  },
+  {
+    "id": "posting-004",
+    "text": "Onsite Office Manager",
+    "categories": {"commitment": "Full-time", "location": "Austin, TX", "team": "Facilities", "allLocations": ["Austin, TX"]},
+    "country": "US",
+    "workplaceType": "onsite",
+    "createdAt": 1789304400000,
+    "hostedUrl": "https://jobs.lever.co/exampleai/posting-004",
+    "applyUrl": "https://jobs.lever.co/exampleai/posting-004/apply",
+    "descriptionPlain": "No compensation figure mentioned here at all.",
+    "additionalPlain": null
+  },
+  {
+    "text": "Malformed Listing Missing Id Field Placeholder",
+    "categories": {"commitment": "Full-time", "location": "Remote"},
+    "createdAt": 1788267600000,
+    "hostedUrl": "https://jobs.lever.co/exampleai/posting-005",
+    "descriptionPlain": "placeholder"
+  }
+]
