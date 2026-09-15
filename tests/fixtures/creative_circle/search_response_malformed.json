@@ -1,0 +1,34 @@
+{
+  "numFound": 3,
+  "solrMainRequest": "",
+  "jobs": [
+    {
+      "jobTitle": "Missing Id Entirely",
+      "TaxTerm": "PERM",
+      "City": ["Denver"],
+      "StateCode": ["CO"]
+    },
+    {
+      "Id": "200002",
+      "jobTitle": null,
+      "TaxTerm": "WEIRD_UNKNOWN_TERM",
+      "City": [],
+      "StateCode": [],
+      "ShortDescription": null,
+      "WorkLocationTypeId": 99,
+      "DatePost": "not-a-real-date"
+    },
+    {
+      "Id": "200003",
+      "jobTitle": "Perfectly Fine Job",
+      "TaxTerm": "PERM",
+      "City": ["Miami"],
+      "StateCode": ["FL"],
+      "ShortDescription": "A completely normal listing.",
+      "WorkLocationTypeId": 1,
+      "DatePost": "2026-09-01T00:00:00.000Z",
+      "CompanyName": "Fine Co"
+    }
+  ],
+  "maxScore": 1
+}

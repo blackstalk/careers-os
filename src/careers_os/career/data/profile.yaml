@@ -1,0 +1,85 @@
+# What I'm targeting and what I bring. Read by careers_os.career.profile.
+# Edit this file, not the scoring code, to change how fit is judged.
+
+target_roles:
+  - Forward Deployed Engineer
+  - Solutions Architect
+  - AI Solutions Architect
+  - Solutions Engineer
+  - Customer Engineer
+  - Senior/Staff Software Engineer (architecture-heavy)
+  - AI Engineer
+  - Technical Consultant (implementation-focused)
+
+target_role_keywords:
+  # Loose signal terms used by the deterministic role_fit scorer. Not an
+  # allow-list — matching none of these doesn't disqualify a role, it just
+  # lowers confidence/score. Real judgment is meant to move to the optional
+  # AI evaluation layer over time (see docs/scoring.md).
+  - forward deployed engineer
+  - solutions architect
+  - solution architect
+  - solutions engineer
+  - customer engineer
+  - technical consultant
+  - implementation engineer
+  - field engineer
+  - ai engineer
+  - machine learning engineer
+  - platform engineer
+  - staff engineer
+  - principal engineer
+
+core_strengths:
+  - software engineering
+  - system architecture
+  - solution architecture
+  - integrations
+  - APIs
+  - cloud infrastructure
+  - automation
+  - AI-assisted systems
+  - production operations
+  - stakeholder communication
+  - translating business problems into working technical systems
+
+technical_interest_keywords:
+  - architecture
+  - api
+  - apis
+  - distributed systems
+  - artificial intelligence
+  - machine learning
+  - ai
+  - ml
+  - cloud
+  - aws
+  - gcp
+  - azure
+  - automation
+  - platform engineering
+  - observability
+  - developer infrastructure
+  - devops
+  - data integration
+  - integration
+  - kubernetes
+  - microservices
+
+career_direction_keywords:
+  - forward deployed
+  - solutions architect
+  - ai engineer
+  - ml systems
+  - architecture leadership
+  - technical lead
+  - customer-facing engineering
+  - implementation lead
+
+narrative: >
+  Strongest positioning combines software engineering, system and solution
+  architecture, integrations/APIs, cloud infrastructure, automation, and
+  AI-assisted systems experience with production operations background and
+  strong stakeholder communication — i.e. someone who can translate a
+  business problem into a working technical system and stay in the room
+  with the customer while doing it.

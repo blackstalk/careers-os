@@ -1,0 +1,18 @@
+{
+  "id": 5000001,
+  "internal_job_id": 9000001,
+  "title": "Forward Deployed Engineer, Enterprise",
+  "company_name": "Example AI",
+  "absolute_url": "https://job-boards.greenhouse.io/exampleai/jobs/5000001",
+  "location": {"name": "San Francisco, CA"},
+  "metadata": [
+    {"id": 1, "name": "Location Type", "value": "Hybrid", "value_type": "single_select"}
+  ],
+  "departments": [{"id": 10, "name": "Solutions Engineering", "child_ids": [], "parent_id": null}],
+  "offices": [{"id": 20, "name": "San Francisco", "location": "San Francisco, CA", "child_ids": [], "parent_id": null}],
+  "first_published": "2026-09-10T09:00:00-04:00",
+  "updated_at": "2026-09-12T10:00:00-04:00",
+  "requisition_id": "R-1",
+  "language": "en",
+  "content": "&lt;div&gt;&lt;p&gt;Own solution architecture for enterprise customers. Annual Salary: $180,000 &amp;mdash; $220,000 USD&lt;/p&gt;&lt;/div&gt;"
+}

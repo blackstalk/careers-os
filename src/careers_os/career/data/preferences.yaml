@@ -1,0 +1,33 @@
+# Configurable scoring inputs. Edit this file to tune fit scoring —
+# nothing here should ever need a code change to adjust.
+
+compensation:
+  full_time:
+    minimum_annual: 175000
+    strong_annual: 200000
+  contract:
+    minimum_hourly: 85
+    strong_hourly: 100
+    exceptional_hourly: 150
+  # A missing/unpublished compensation figure must never be scored as a
+  # rejection — see docs/scoring.md#compensation-fit.
+  missing_compensation_penalty: 0.0
+
+work_arrangement:
+  preferred:
+    - remote
+    - hybrid
+  # Hybrid is only downweighted relative to remote, never disqualified —
+  # "strong hybrid opportunities when strategically compelling" per profile.
+  onsite_penalty: 0.35
+  hybrid_penalty: 0.1
+
+component_weights:
+  # Used only to derive `overall_fit` from the individual components —
+  # each component remains independently visible and explained.
+  role_fit: 0.30
+  technical_fit: 0.20
+  career_direction_fit: 0.20
+  compensation_fit: 0.15
+  work_arrangement_fit: 0.10
+  experience_fit: 0.05

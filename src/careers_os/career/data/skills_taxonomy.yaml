@@ -1,0 +1,240 @@
+# Canonical skill/theme taxonomy shared by requirement extraction
+# (scoring/requirements.py) and evidence matching (career/evidence_matcher.py).
+#
+# Each entry:
+#   aliases:  surface forms to match in free text (case-insensitive, substring)
+#   category: RequirementCategory value this skill belongs to when found in
+#             a job description
+#   adjacent: other canonical skill keys that count as loosely-related
+#             substitute evidence (used for partial_match/adjacent_experience
+#             classification — never promoted to strong_match)
+#
+# This is deliberately editable config, not code — see docs/evidence-model.md.
+
+kubernetes:
+  display_name: Kubernetes
+  aliases: ["kubernetes", "k8s"]
+  category: cloud
+  adjacent: [docker, ci_cd, aws, linux]
+
+docker:
+  display_name: Docker
+  aliases: ["docker", "containers", "containerization"]
+  category: cloud
+  adjacent: [kubernetes, ci_cd, linux]
+
+aws:
+  display_name: AWS
+  aliases: ["aws", "amazon web services"]
+  category: cloud
+  adjacent: [cloud_infrastructure, ci_cd, linux]
+
+gcp:
+  display_name: Google Cloud Platform
+  aliases: ["gcp", "google cloud"]
+  category: cloud
+  adjacent: [cloud_infrastructure, aws]
+
+azure:
+  display_name: Azure
+  aliases: ["azure", "microsoft azure"]
+  category: cloud
+  adjacent: [cloud_infrastructure, aws]
+
+cloud_infrastructure:
+  display_name: Cloud Infrastructure
+  aliases: ["cloud infrastructure", "cloud platform", "cloud architecture"]
+  category: cloud
+  adjacent: [aws, gcp, azure, ci_cd]
+
+linux:
+  display_name: Linux
+  aliases: ["linux", "nginx", "unix"]
+  category: cloud
+  adjacent: [aws, cloud_infrastructure]
+
+ci_cd:
+  display_name: CI/CD
+  aliases: ["ci/cd", "continuous integration", "continuous deployment", "ci pipeline"]
+  category: cloud
+  adjacent: [docker, kubernetes, aws]
+
+terraform:
+  display_name: Terraform / Infrastructure as Code
+  aliases: ["terraform", "infrastructure as code", "iac"]
+  category: cloud
+  adjacent: [aws, cloud_infrastructure, ci_cd]
+
+php:
+  display_name: PHP
+  aliases: ["php"]
+  category: programming_language
+  adjacent: [laravel]
+
+javascript:
+  display_name: JavaScript
+  aliases: ["javascript", " js "]
+  category: programming_language
+  adjacent: [typescript]
+
+typescript:
+  display_name: TypeScript
+  aliases: ["typescript"]
+  category: programming_language
+  adjacent: [javascript]
+
+python:
+  display_name: Python
+  aliases: ["python"]
+  category: programming_language
+  adjacent: []
+
+go:
+  display_name: Go
+  aliases: ["golang", " go "]
+  category: programming_language
+  adjacent: []
+
+java:
+  display_name: Java
+  aliases: [" java "]
+  category: programming_language
+  adjacent: []
+
+sql:
+  display_name: SQL / Relational Databases
+  aliases: ["sql", "mysql", "postgres", "postgresql"]
+  category: data
+  adjacent: []
+
+laravel:
+  display_name: Laravel
+  aliases: ["laravel"]
+  category: framework
+  adjacent: [php]
+
+wordpress:
+  display_name: WordPress
+  aliases: ["wordpress", "bedrock", " acf "]
+  category: framework
+  adjacent: [php, cms]
+
+craft_cms:
+  display_name: Craft CMS
+  aliases: ["craft cms"]
+  category: framework
+  adjacent: [php, cms]
+
+cms:
+  display_name: CMS Platforms
+  aliases: ["cms", "content management system"]
+  category: framework
+  adjacent: [wordpress, craft_cms]
+
+rest_api:
+  display_name: REST APIs
+  aliases: ["rest api", "restful api", "rest apis", " apis ", " api "]
+  category: architecture
+  adjacent: [integration, microservices]
+
+graphql:
+  display_name: GraphQL
+  aliases: ["graphql"]
+  category: architecture
+  adjacent: [rest_api]
+
+microservices:
+  display_name: Microservices
+  aliases: ["microservices", "microservice architecture"]
+  category: architecture
+  adjacent: [rest_api, distributed_systems]
+
+distributed_systems:
+  display_name: Distributed Systems
+  aliases: ["distributed systems"]
+  category: architecture
+  adjacent: [microservices, integration, automation, cloud_infrastructure]
+
+solutions_architecture:
+  display_name: Solution / Solutions Architecture
+  aliases: ["solution architecture", "solutions architecture", "solution design", "systems architecture", "system architecture"]
+  category: architecture
+  adjacent: [distributed_systems, integration, platform_engineering]
+
+platform_engineering:
+  display_name: Platform Engineering
+  aliases: ["platform engineering", "platform modernization", "internal platform"]
+  category: architecture
+  adjacent: [solutions_architecture, automation, cloud_infrastructure]
+
+integration:
+  display_name: Systems / API Integration
+  aliases: ["integration", "integrations", "middleware", "webhooks"]
+  category: architecture
+  adjacent: [rest_api, automation, crm]
+
+automation:
+  display_name: Workflow Automation
+  aliases: ["automation", "workflow automation", "process automation"]
+  category: architecture
+  adjacent: [integration, ai_ml]
+
+crm:
+  display_name: CRM Platforms (HubSpot/Salesforce)
+  aliases: ["hubspot", "salesforce", "crm"]
+  category: domain
+  adjacent: [integration, automation]
+
+analytics:
+  display_name: Analytics / Instrumentation
+  aliases: ["ga4", "google tag manager", "posthog", "analytics instrumentation", "google analytics"]
+  category: data
+  adjacent: [integration]
+
+ai_ml:
+  display_name: AI / Machine Learning
+  aliases: ["machine learning", "artificial intelligence", " ai ", " ai-", "llm", "large language model", "ai-assisted", "ai-powered"]
+  category: ai_ml
+  adjacent: [automation, data_pipeline]
+
+data_pipeline:
+  display_name: Data Pipelines / OCR / Search Indexing
+  aliases: ["ocr", "search indexing", "data pipeline", "crawler", "crawling", "indexing"]
+  category: ai_ml
+  adjacent: [ai_ml, automation]
+
+customer_facing:
+  display_name: Customer-Facing / Stakeholder-Facing Delivery
+  aliases: ["customer-facing", "client-facing", "stakeholder", "customer engagement", "stakeholder communication"]
+  category: customer_facing
+  adjacent: [technical_consulting]
+
+technical_consulting:
+  display_name: Technical Consulting / Advisory
+  aliases: ["technical consultant", "consultative", "advised", "advisory"]
+  category: customer_facing
+  adjacent: [customer_facing, solutions_architecture]
+
+leadership:
+  display_name: Technical Leadership
+  aliases: ["led a team", "technical leadership", "team lead", "mentored", "managed a team", "led architecture", "technical director"]
+  category: leadership
+  adjacent: [vendor_coordination]
+
+vendor_coordination:
+  display_name: Vendor / Cross-Functional Coordination
+  aliases: ["vendor coordination", "cross-functional", "coordinated internal stakeholders", "coordinated agencies"]
+  category: leadership
+  adjacent: [leadership, customer_facing]
+
+bachelors_degree:
+  display_name: Bachelor's Degree
+  aliases: ["bachelor's degree", "bachelors degree", "bachelor degree", "bs degree", "ba degree"]
+  category: education
+  adjacent: []
+
+masters_degree:
+  display_name: Master's Degree
+  aliases: ["master's degree", "masters degree", "ms degree", "ma degree", "mba"]
+  category: education
+  adjacent: [bachelors_degree]

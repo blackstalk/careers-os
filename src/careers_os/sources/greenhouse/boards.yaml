@@ -1,0 +1,14 @@
+# Greenhouse job-board tokens to search by default (used by
+# `jobs search greenhouse-all` and as the default set for validating the
+# adapter). A board token is the company-identifying slug in
+# https://boards-api.greenhouse.io/v1/boards/<token>/jobs — usually, but not
+# always, the same as the company's public careers-page slug.
+#
+# Edit this file to track whichever companies you're actually watching.
+# `jobs search greenhouse --board <token> ...` works for any valid token
+# without needing to be listed here first.
+boards:
+  - anthropic
+  - stripe
+  - figma
+  - brex

@@ -1,0 +1,83 @@
+{
+  "meta": {"total": 5},
+  "jobs": [
+    {
+      "id": 5000001,
+      "internal_job_id": 9000001,
+      "title": "Forward Deployed Engineer, Enterprise",
+      "company_name": "Example AI",
+      "absolute_url": "https://job-boards.greenhouse.io/exampleai/jobs/5000001",
+      "location": {"name": "San Francisco, CA"},
+      "metadata": [
+        {"id": 1, "name": "Location Type", "value": "Hybrid", "value_type": "single_select"}
+      ],
+      "departments": [{"id": 10, "name": "Solutions Engineering", "child_ids": [], "parent_id": null}],
+      "offices": [{"id": 20, "name": "San Francisco", "location": "San Francisco, CA", "child_ids": [], "parent_id": null}],
+      "first_published": "2026-09-10T09:00:00-04:00",
+      "updated_at": "2026-09-12T10:00:00-04:00",
+      "requisition_id": "R-1",
+      "language": "en",
+      "content": "&lt;div&gt;&lt;p&gt;Own solution architecture for enterprise customers. Annual Salary: $180,000 &amp;mdash; $220,000 USD&lt;/p&gt;&lt;/div&gt;"
+    },
+    {
+      "id": 5000002,
+      "internal_job_id": 9000002,
+      "title": "Remote Customer Engineer",
+      "company_name": "Example AI",
+      "absolute_url": "https://job-boards.greenhouse.io/exampleai/jobs/5000002",
+      "location": {"name": "Remote-Friendly, United States"},
+      "metadata": [],
+      "departments": [{"id": 11, "name": "Customer Engineering", "child_ids": [], "parent_id": null}],
+      "offices": [],
+      "first_published": "2026-08-01T09:00:00-04:00",
+      "updated_at": "2026-08-15T10:00:00-04:00",
+      "requisition_id": "R-2",
+      "language": "en",
+      "content": "&lt;div&gt;&lt;p&gt;Support customers remotely with integrations and APIs.&lt;/p&gt;&lt;/div&gt;"
+    },
+    {
+      "id": 5000003,
+      "internal_job_id": 9000003,
+      "title": "Contract Data Analyst",
+      "company_name": "Example AI",
+      "absolute_url": "https://job-boards.greenhouse.io/exampleai/jobs/5000003",
+      "location": {"name": "New York City, NY"},
+      "metadata": [
+        {"id": 2, "name": "Employment Type", "value": "Contract", "value_type": "single_select"}
+      ],
+      "departments": [],
+      "offices": [],
+      "first_published": "2026-01-05T09:00:00-04:00",
+      "updated_at": "2026-01-06T10:00:00-04:00",
+      "requisition_id": "R-3",
+      "language": "en",
+      "content": "&lt;div&gt;&lt;p&gt;Analyze data for internal stakeholders.&lt;/p&gt;&lt;/div&gt;"
+    },
+    {
+      "id": 5000004,
+      "internal_job_id": 9000004,
+      "title": "Onsite Office Manager",
+      "company_name": "Example AI",
+      "absolute_url": "https://job-boards.greenhouse.io/exampleai/jobs/5000004",
+      "location": {"name": "Austin, TX"},
+      "metadata": [],
+      "departments": [],
+      "offices": [],
+      "first_published": "2026-09-13T09:00:00-04:00",
+      "updated_at": "2026-09-13T09:00:00-04:00",
+      "requisition_id": "R-4",
+      "language": "en",
+      "content": "&lt;div&gt;&lt;p&gt;No compensation figure mentioned here at all.&lt;/p&gt;&lt;/div&gt;"
+    },
+    {
+      "title": "Malformed Listing Missing Id Field Placeholder",
+      "company_name": "Example AI",
+      "absolute_url": "https://job-boards.greenhouse.io/exampleai/jobs/5000005",
+      "location": {"name": "Remote"},
+      "metadata": [],
+      "first_published": "2026-09-01T09:00:00-04:00",
+      "updated_at": "2026-09-01T09:00:00-04:00",
+      "content": "&lt;div&gt;placeholder&lt;/div&gt;"
+    }
+  ]
+}
