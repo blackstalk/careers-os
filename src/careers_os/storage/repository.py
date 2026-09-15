@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 
 from careers_os.domain.enums import JobStatus
 from careers_os.domain.job import NormalizedJob
+from careers_os.domain.opportunity_decision import OpportunityDecision
 from careers_os.domain.raw_job import RawJob
 from careers_os.domain.scoring import CareerFitResult
 from careers_os.storage.dedup import MIN_CONFIDENCE_TO_FLAG, compare_jobs
 from careers_os.storage.db import (
     JobChangeRecord,
+    JobEvaluationRecord,
     JobRecord,
     JobScoreRecord,
     PossibleDuplicateRecord,
@@ -207,6 +209,34 @@ class JobRepository:
             record.discovered_by_profiles = [*record.discovered_by_profiles, profile_name]
             self.session.flush()
 
+    def save_evaluation(self, job_id: int, decision: OpportunityDecision) -> JobEvaluationRecord:
+        """Append-only, like save_score — see JobEvaluationRecord."""
+        record = JobEvaluationRecord(
+            job_id=job_id,
+            computed_at=datetime.now(timezone.utc),
+            evaluation_version=decision.evaluation_version,
+            eligibility=decision.eligibility.model_dump(mode="json"),
+            qualification=decision.qualification.model_dump(mode="json"),
+            opportunity_cost=decision.opportunity_cost.model_dump(mode="json"),
+            scope=decision.scope.model_dump(mode="json"),
+            freshness=decision.freshness.model_dump(mode="json"),
+            pursue_recommendation=decision.pursue.recommendation.value,
+            pursue_reason=decision.pursue.reason,
+            pursue_factors=decision.pursue.contributing_factors,
+        )
+        self.session.add(record)
+        self.session.flush()
+        return record
+
+    def get_latest_evaluation(self, job_id: int) -> Optional[JobEvaluationRecord]:
+        stmt = (
+            select(JobEvaluationRecord)
+            .where(JobEvaluationRecord.job_id == job_id)
+            .order_by(JobEvaluationRecord.computed_at.desc())
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
     def list_duplicates(self) -> list[PossibleDuplicateRecord]:
         return list(self.session.execute(select(PossibleDuplicateRecord)).scalars().all())
 
@@ -258,3 +288,61 @@ class JobRepository:
 
     def commit(self) -> None:
         self.session.commit()
+
+
+def latest_fit_from_record(record: JobRecord) -> Optional[CareerFitResult]:
+    """Reconstruct the latest stored CareerFitResult for a job, or None if
+    it's never been scored. Kept alongside job_record_to_normalized for
+    the same reason — one place that knows how storage's flattened JSON
+    maps back onto the domain shape.
+    """
+    if not record.scores:
+        return None
+    latest = record.scores[0]
+    from careers_os.domain.experience import ExperienceFitDetail
+    from careers_os.domain.scoring import FitComponent
+
+    components = {name: FitComponent(**value) for name, value in latest.components.items()}
+    return CareerFitResult(
+        **components,
+        overall_fit=latest.overall_fit,
+        scorer_version=latest.scorer_version,
+        ai_evaluation_included=latest.ai_evaluation_included,
+        experience_detail=ExperienceFitDetail(**latest.experience_detail) if latest.experience_detail else None,
+    )
+
+
+def job_record_to_normalized(record: JobRecord) -> NormalizedJob:
+    """Reconstruct a NormalizedJob from a stored JobRecord — for anything
+    downstream of storage (evaluation, discovery) that needs the
+    canonical domain shape rather than the ORM row. Kept in one place so
+    every caller stays in sync with JobRecord's actual columns.
+    """
+    return NormalizedJob(
+        id=record.id,
+        source=record.source,
+        source_job_id=record.source_job_id,
+        source_url=record.source_url,
+        title=record.title,
+        company=record.company,
+        location=record.location,
+        remote_status=record.remote_status,
+        employment_type=record.employment_type,
+        salary_min=record.salary_min,
+        salary_max=record.salary_max,
+        hourly_min=record.hourly_min,
+        hourly_max=record.hourly_max,
+        currency=record.currency,
+        description=record.description,
+        skills=record.skills,
+        technologies=record.technologies,
+        posted_at=record.posted_at,
+        updated_at=record.updated_at,
+        retrieved_at=record.retrieved_at,
+        recruiter_name=record.recruiter_name,
+        recruiter_contact=record.recruiter_contact,
+        status=record.status,
+        first_seen_at=record.first_seen_at,
+        last_seen_at=record.last_seen_at,
+        source_updated_at=record.source_updated_at,
+    )

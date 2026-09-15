@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from careers_os.career.skills import SkillsTaxonomy
 from careers_os.domain.enums import EmploymentType, RemoteStatus
 from careers_os.domain.job import NormalizedJob
+from careers_os.domain.requirements import RequirementImportance
 from careers_os.domain.taxonomy import SkillCategory
 from careers_os.scoring.requirements import extract_requirements
 
@@ -73,3 +74,47 @@ class TestEducation:
         job = _job("Bachelor's degree in Computer Science or equivalent experience required.")
         reqs = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load())}
         assert "bachelors_degree" in reqs
+
+
+class TestRequirementImportance:
+    def test_years_requirement_in_minimum_requirements_section_is_hard_required(self):
+        job = _job(
+            "Minimum requirements 3+ years of experience as a Golang software engineer. "
+            "Preferred qualifications Experience in PHP and Ruby."
+        )
+        reqs = {r.canonical_skill: r for r in extract_requirements(job, SkillsTaxonomy.load())}
+        assert reqs["go"].importance == RequirementImportance.HARD_REQUIRED
+        assert reqs["go"].min_years == 3
+
+    def test_preferred_skill_is_never_hard_required_even_with_years(self):
+        job = _job(
+            "Minimum requirements 3+ years of Go experience. "
+            "Preferred qualifications 5+ years of PHP experience."
+        )
+        reqs = {r.canonical_skill: r for r in extract_requirements(job, SkillsTaxonomy.load())}
+        assert reqs["php"].importance == RequirementImportance.PREFERRED
+
+    def test_skill_without_years_in_hard_section_is_required_not_hard_required(self):
+        job = _job("Minimum requirements Experience with REST APIs.")
+        reqs = {r.canonical_skill: r for r in extract_requirements(job, SkillsTaxonomy.load())}
+        assert reqs["rest_api"].importance == RequirementImportance.REQUIRED
+
+    def test_boilerplate_prose_mentioning_preferred_qualifications_does_not_mislabel_real_minimum_section(self):
+        # Real-world case (Stripe's own posting boilerplate): "preferred
+        # qualifications" appears in an earlier prose sentence *before* the
+        # real "Minimum requirements" heading — the prose occurrence must
+        # not be mistaken for the section boundary.
+        job = _job(
+            "Meets the minimum requirements to be considered. The preferred qualifications "
+            "are a bonus, not a requirement. Minimum requirements 3+ years of Go experience. "
+            "Preferred qualifications Experience in PHP."
+        )
+        reqs = {r.canonical_skill: r for r in extract_requirements(job, SkillsTaxonomy.load())}
+        assert reqs["go"].importance == RequirementImportance.HARD_REQUIRED
+        assert reqs["go"].is_preferred is False
+        assert reqs["php"].is_preferred is True
+
+    def test_every_requirement_has_a_stable_id(self):
+        job = _job("5+ years of AWS experience required.")
+        reqs = extract_requirements(job, SkillsTaxonomy.load())
+        assert all(r.id for r in reqs)

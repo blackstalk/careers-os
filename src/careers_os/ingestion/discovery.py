@@ -17,18 +17,21 @@ from careers_os.career.opportunity_value import (
     assess_career_direction,
     assess_immediate_opportunity,
 )
+from careers_os.career.candidate import CandidateProfile
 from careers_os.career.discovery_ranking import compute_rank_score
 from careers_os.career.preferences import Preferences
 from careers_os.career.profile import CareerProfile
 from careers_os.career.search_profiles import SearchProfile
 from careers_os.career.skills import SkillsTaxonomy
 from careers_os.domain.enums import EmploymentType
+from careers_os.domain.opportunity_decision import OpportunityDecision
 from careers_os.domain.query import JobSearchQuery
 from careers_os.domain.scoring import CareerFitResult
+from careers_os.ingestion.evaluation import evaluate_opportunity
 from careers_os.ingestion.pipeline import run_search_ingestion
 from careers_os.sources.base import JobSource
 from careers_os.storage.db import JobRecord
-from careers_os.storage.repository import JobRepository
+from careers_os.storage.repository import JobRepository, job_record_to_normalized
 
 logger = logging.getLogger("careers_os.ingestion.discovery")
 
@@ -42,6 +45,7 @@ class DiscoveryOpportunity:
     direction: OpportunityAssessment
     matched_profiles: list[str]
     rank_score: float
+    decision: OpportunityDecision
 
 
 @dataclass
@@ -54,6 +58,7 @@ class DiscoveryMetrics:
     strong_bridge_roles: int = 0
     new_jobs: int = 0
     updated_jobs: int = 0
+    pursue_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -77,6 +82,7 @@ def run_discovery(
     preferences: Optional[Preferences] = None,
     evidence_index: Optional[EvidenceIndex] = None,
     taxonomy: Optional[SkillsTaxonomy] = None,
+    candidate: Optional[CandidateProfile] = None,
 ) -> DiscoveryResult:
     """Search every (source, profile-query) pair, score/match/rank the
     unique jobs discovered, and return the top `limit`.
@@ -90,6 +96,7 @@ def run_discovery(
     career_profile = career_profile or CareerProfile.load()
     preferences = preferences or Preferences.load()
     taxonomy = taxonomy or SkillsTaxonomy.load()
+    candidate = candidate or CandidateProfile.load()
 
     result = DiscoveryResult()
     result.metrics.sources_queried = len({family for family, _ in sources})
@@ -144,10 +151,16 @@ def run_discovery(
         rank_score = compute_rank_score(
             fit, bridge, immediate, direction, preferences.discovery_ranking_weights
         )
+        normalized = job_record_to_normalized(job)
+        eval_result = evaluate_opportunity(
+            normalized, fit, candidate=candidate, preferences=preferences,
+            taxonomy=taxonomy, evidence_index=evidence_index, use_ai=use_ai,
+        )
         opportunities.append(
             DiscoveryOpportunity(
-                job=job, fit=fit, bridge=bridge, immediate=immediate, direction=direction,
+                job=job, fit=eval_result.fit, bridge=bridge, immediate=immediate, direction=direction,
                 matched_profiles=list(job.discovered_by_profiles), rank_score=rank_score,
+                decision=eval_result.decision,
             )
         )
 
@@ -155,6 +168,11 @@ def run_discovery(
     result.metrics.strong_bridge_roles = sum(
         1 for o in opportunities if o.bridge.classification == BridgeClassification.STRONG
     )
+    pursue_counts: dict[str, int] = {}
+    for o in opportunities:
+        key = o.decision.pursue.recommendation.value
+        pursue_counts[key] = pursue_counts.get(key, 0) + 1
+    result.metrics.pursue_counts = pursue_counts
 
     if employment_types:
         opportunities = [o for o in opportunities if EmploymentType(o.job.employment_type) in employment_types]

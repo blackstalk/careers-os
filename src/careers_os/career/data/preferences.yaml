@@ -32,6 +32,14 @@ component_weights:
   work_arrangement_fit: 0.10
   experience_fit: 0.05
 
+freshness_thresholds:
+  # Age-in-days boundaries for career/freshness.py — used by `jobs
+  # evaluate` and `jobs discover`. A stale posting is never treated as
+  # closed, only flagged as old (see docs/pursue-recommendation.md).
+  fresh_days: 7
+  recent_days: 30
+  aging_days: 90
+
 discovery_ranking_weights:
   # Used only by `jobs discover` (Phase 2.5) to order results — see
   # docs/discovery.md#ranking-philosophy. Each dimension (bridge role,

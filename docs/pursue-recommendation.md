@@ -1,0 +1,226 @@
+# Qualification, transferable evidence, and pursue recommendation (Phase 3)
+
+See docs/eligibility.md for the hard-constraint layer this builds on top
+of. Together these turn "how well does this job match?" into "should I
+actually spend time pursuing this, and why?" — see
+`ingestion/evaluation.py::evaluate_opportunity` for the orchestration and
+`jobs evaluate <source> <source_job_id>` for the full report.
+
+## Qualification vs. eligibility vs. fit
+
+Three genuinely different questions:
+
+- **Eligibility** (docs/eligibility.md) — am I *allowed* to do this job?
+- **Qualification** (`scoring/qualification.py`) — can I *credibly do* this job?
+- **Fit** (`docs/scoring.md`, Phase 1/2) — how well does it match, on a
+  continuous scale, across role/technical/direction/compensation/etc.?
+
+A candidate can be eligible and unqualified (Case C below), qualified and
+ineligible (Case B below), or both eligible and qualified while still not
+worth pursuing (Case A below, via opportunity cost).
+
+## Requirement importance
+
+`domain/requirements.py::RequirementImportance` — `hard_required` /
+`required` / `preferred` / `informational` / `unknown`. Only
+`hard_required` requirements can single-handedly fail qualification;
+`preferred` ones never gate anything, full stop (they're excluded from
+qualification's averaging entirely, not just down-weighted).
+
+`scoring/requirements.py` detects `hard_required` conservatively: a
+skill/years mention must fall within a real "Minimum requirements"-style
+section (not merely anywhere in the "required" region) **and** carry an
+explicit numeric year threshold. A bare skill mention in that section
+without a number is `required`, not `hard_required` — the numeric
+threshold is what makes it an unambiguous hard gate.
+
+### A real bug this surfaced: prose vs. heading
+
+Stripe's own posting boilerplate literally says *"...if you meet the
+minimum requirements... **The preferred qualifications are a bonus, not a
+requirement.** Minimum requirements 6+ years..."* — the phrase "preferred
+qualifications" appears once in ordinary prose *before* the real
+"Minimum requirements" heading, and once again later as the actual
+section heading. A naive "find the first occurrence" heuristic anchored
+on the wrong (earlier, prose) occurrence, which caused the entire real
+"Minimum requirements" section — including "3+ years of experience as a
+Golang software engineer" — to be misclassified as preferred. Fixed by
+requiring a marker occurrence to be followed by heading-like content, not
+a linking verb ("are", "is", "the", etc.) — see
+`scoring/requirements.py::_section_start`'s prose-continuation-word skip.
+
+A second, related bug: the fixed-size (±60 char) context window used to
+attach a "5+ years" mention to the nearest skill checked *every* skill in
+the taxonomy for a match anywhere in the window, not just the nearest
+one — on short/dense text this could attach a hard-section's years
+threshold to an unrelated skill mentioned later in the same window. Fixed
+by picking only the single nearest skill mention, not every skill that
+happens to occur in the window.
+
+Both bugs were caught by testing against real job text, not invented —
+see `tests/test_requirements_extraction.py::TestRequirementImportance`.
+
+## Qualification statuses
+
+| Status | Meaning |
+|---|---|
+| `strong` / `moderate` / `weak` | Average match strength across required + hard-required requirements (preferred ones excluded) |
+| `fail` | At least one `hard_required` requirement is `unsupported` (zero evidence, direct or adjacent) — dominates regardless of how strong everything else is |
+| `unknown` | No resume imported, or no taxonomy-recognized required requirements to judge |
+
+A `hard_required` requirement with only *adjacent* (not direct) evidence
+downgrades qualification to `weak` rather than `fail` — the skill is
+genuinely evidenced, just not confidently enough for a hard numeric gate.
+
+## Transferable evidence reasoning (optional AI layer)
+
+The deterministic matcher (`scoring/evidence_matcher.py`, Phase 2) is
+intentionally literal — it can't tell "no direct evidence of Java or
+Python" apart from "no evidence of *any* capability this requirement is
+really testing for." `scoring/evidence_reasoner.py` is the first AI layer
+introduced specifically to close that gap, for the narrow set of gaps
+where it's actually useful.
+
+### AI evidence guardrails — enforced, not just documented
+
+Every guardrail below is enforced by code (see
+`tests/test_evidence_reasoner.py` for a direct test of each):
+
+1. **Restricted vocabulary.** `domain/matching.py::AIAssessmentType` has
+   exactly four values: `transferable_capability`, `resume_language_gap`,
+   `interview_prep_gap`, `no_change`. There is no `direct_evidence` or
+   `strong_match` value — the AI is structurally incapable of upgrading a
+   gap into a claim of direct experience, because that value doesn't
+   exist in the schema it must validate against.
+2. **Mandatory, real evidence citation.** `evidence_ids` must be
+   non-empty (except for `no_change`) and every id must exist in the
+   *candidate's own* evidence index actually shown to the reasoner for
+   this job. An assessment citing zero evidence, or evidence that doesn't
+   exist, is rejected outright.
+3. **Requirement scoping.** `requirement_id` must reference a requirement
+   actually offered to the reasoner for this job — an assessment about
+   anything else is rejected.
+4. **No room to invent.** The schema (`extra: "forbid"`) has no field for
+   years of experience, technologies, employers, or degrees — there's no
+   slot to put an invented one in, and an attempt to add one is a
+   validation failure, not a silently-ignored extra field.
+5. **Never gates.** `ai_assessment` is purely additive on
+   `RequirementMatch` — it never changes `match_type` or `gap_type`. A
+   `hard_required` `fail` from a zero-evidence gap is untouched by
+   anything the AI says, because qualification is computed from
+   `match_type`/`importance` alone (`scoring/qualification.py`), which the
+   AI cannot write to.
+
+### Cost control
+
+Never called for: hard-required gaps (obvious, binary — "do not ask AI to
+rescue obvious hard gaps"), or anything already resolved confidently
+(`strong_match`/`partial_match`). Only called for `unsupported`/
+`adjacent_experience` gaps on non-hard-required requirements — the
+genuinely ambiguous cases. The system works fully deterministically with
+no API key configured (`scoring/evidence_reasoner.py::get_default_reasoner`
+returns `None`), and any reasoner failure (missing package, network
+error, malformed output, or a custom reasoner raising) degrades to "skip
+AI, keep the deterministic result" — never propagates.
+
+### Provider-neutral by design
+
+`EvidenceReasoner` (ABC) with `ClaudeEvidenceReasoner` as the default
+implementation — domain/scoring logic never imports the `anthropic`
+package directly, mirroring the existing `scoring/ai.py` pattern from
+Phase 1.
+
+## Opportunity cost
+
+Not a life-modeling exercise — `career/opportunity_cost.py` flags the
+narrow case where qualification is high but the actual value of spending
+time is low: compensation below target *and* career direction weak. High
+opportunity cost forces `low_priority` in the pursue recommendation
+regardless of how qualified the candidate is (see the real Creative
+Circle case below) — a role you'd definitely get the offer for isn't
+automatically worth pursuing.
+
+## Scope/ownership classification
+
+`career/scope.py` distinguishes "implement approved wireframes in an
+existing template" from "own platform architecture and API design" —
+category/phrase presence (reusing the shared skills taxonomy's own
+architecture/leadership/customer-facing/AI-ML categories, plus a small
+phrase list for execution/ownership/strategy/maintenance, which have no
+taxonomy equivalent), never raw keyword counts.
+
+## Freshness
+
+`career/freshness.py`, thresholds configurable in
+`career/data/preferences.yaml`'s `freshness_thresholds`
+(`fresh_days`/`recent_days`/`aging_days`, default 7/30/90). A `stale`
+posting is never treated as closed — the reason text says so explicitly
+("still visible at the source; closure not confirmed") — only a direct
+job-detail confirmation should ever claim closure, and nothing here
+attempts that.
+
+## Pursue recommendation — hard gates dominate
+
+`career/pursue.py::compute_pursue_recommendation`, in strict precedence
+order:
+
+1. `eligibility == ineligible` → **do_not_pursue**, regardless of fit.
+2. `qualification == fail` (a hard-required gap with zero evidence) →
+   **do_not_pursue**, regardless of career-direction or bridge strength.
+3. `eligibility in (verify, unknown)` → **verify_first** — a promising job
+   must not present as a confident recommendation while something
+   necessary to confirm remains open.
+4. `opportunity_cost == high` → **low_priority**, even for excellent
+   qualification.
+5. Otherwise: `strong_pursue` / `pursue` / `consider` / `low_priority`
+   from a straightforward weighing of qualification, career direction,
+   and immediate opportunity (see `career/pursue.py` for the exact
+   branches — deliberately simple, explainable `if`/`elif` logic, not a
+   scored formula).
+
+Every recommendation carries `reason` (one sentence) and
+`contributing_factors` (the raw inputs that fed the decision) — never a
+bare label.
+
+## Regression cases (real jobs, live-discovered)
+
+All three verified end-to-end through the actual CLI
+(`tests/test_regression_real_cases.py` covers them offline against a
+synthetic evidence index; the live-data versions were run through
+`jobs evaluate` directly):
+
+| Case | Job | Qualification | Eligibility | Pursue |
+|---|---|---|---|---|
+| A | Creative Circle "Senior Web Developer — PHP" | `strong` | `eligible` | **`low_priority`** — strong qualification, but $70–75/hr is below the contract floor and career direction is weak; opportunity cost is `high` |
+| B | Stripe "Technical Solutions Engineer" | `moderate` | `verify` | **`verify_first`** — the timezone requirement (America/Chicago vs. "Mountain or Pacific") is ambiguous and must be resolved before a confident recommendation |
+| C | Stripe "Backend Engineer... Platform" | `fail` | `eligible` | **`do_not_pursue`** — hard-required "3+ years professional Golang" has zero evidence; PHP is only a *preferred* qualification and cannot rescue it |
+
+Case A's own strong PHP evidence, Case B's genuinely strong bridge
+signal, and Case C's otherwise-solid PHP/REST-API match all fail to
+produce `strong_pursue` — which is the entire point of separating
+eligibility, qualification, and opportunity cost from raw fit.
+
+## Evaluation versioning and persistence
+
+`domain/opportunity_decision.py::EVALUATION_VERSION` (currently
+`"opportunity-decision-v1"`) is stamped on every stored
+`JobEvaluationRecord` (`storage/db.py`, append-only like
+`JobScoreRecord`) — `jobs evaluate` persists a new row each time it's
+run, so a job's recommendation history is inspectable over time, and it's
+possible to tell whether a later value changed because the job's data
+changed, the evidence changed, preferences changed, or the evaluation
+logic itself changed.
+
+**A real staleness gap this exposed**: `jobs evaluate` reads the *latest
+stored* `CareerFitResult` (`storage/repository.py::latest_fit_from_record`)
+rather than recomputing fresh. During this phase's own development, a
+requirement-extraction bugfix (see above) was made *after* some jobs had
+already been scored — `jobs evaluate` briefly showed a stale, pre-fix
+`experience_detail` for one of the regression cases until the job was
+re-searched. Nothing currently detects this automatically: `SCORER_VERSION`
+(Phase 1) didn't change even though the underlying requirement-extraction
+behavior did. This is a known, documented gap (not silently ignored) —
+see docs/architecture.md's Phase 4 recommendations for
+version-based staleness detection as a candidate fix, and for now the
+practical mitigation is the same as always: re-run a search/discover pass
+to refresh a job's stored score before trusting `jobs evaluate` on it.

@@ -1,0 +1,37 @@
+# Structured facts about the candidate — used only for deterministic
+# eligibility checks (career/eligibility.py). This is facts, not
+# preferences (see career/data/preferences.yaml for scoring weights/
+# penalties) and not positioning (see career/data/profile.yaml).
+#
+# Leave a field null/omit a section when genuinely unknown rather than
+# guessing — eligibility checks treat missing facts as UNKNOWN, never as
+# a silent pass or fail. See docs/eligibility.md.
+
+location:
+  city: Houston
+  state: Texas
+  country: US
+  timezone: America/Chicago
+
+work_authorization:
+  country: US
+  authorized: true
+  sponsorship_required: false
+
+# preferred | acceptable | unacceptable — how each arrangement is treated
+# when a job unambiguously requires it. This is a hard-constraint fact,
+# distinct from career/data/preferences.yaml's work_arrangement scoring
+# penalties (which just make remote score higher, never treat onsite as
+# impossible).
+work_preferences:
+  remote: preferred
+  hybrid: acceptable
+  onsite: acceptable
+
+relocation:
+  willing: false
+
+# true | false | null (null = unknown/not applicable — most roles never
+# ask, so this stays null until a job's text actually requires an answer)
+security_clearance:
+  held: null

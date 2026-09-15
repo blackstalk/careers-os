@@ -253,6 +253,35 @@ class JobChangeRecord(Base):
     new_value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
 
+class JobEvaluationRecord(Base):
+    """Persisted Phase 3 opportunity decision — one row per (re)evaluation.
+
+    Append-only like JobScoreRecord, so a job's recommendation history is
+    visible over time and it's possible to tell whether a later change
+    came from the job's own data changing, the candidate's evidence
+    changing, preferences changing, or the evaluation logic itself
+    changing (`evaluation_version`) — see docs/pursue-recommendation.md.
+    """
+
+    __tablename__ = "job_evaluations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    evaluation_version: Mapped[str] = mapped_column(String)
+
+    eligibility: Mapped[dict] = mapped_column(JSON)
+    qualification: Mapped[dict] = mapped_column(JSON)
+    opportunity_cost: Mapped[dict] = mapped_column(JSON)
+    scope: Mapped[dict] = mapped_column(JSON)
+    freshness: Mapped[dict] = mapped_column(JSON)
+
+    pursue_recommendation: Mapped[str] = mapped_column(String)
+    pursue_reason: Mapped[str] = mapped_column(String)
+    pursue_factors: Mapped[list] = mapped_column(JSON, default=list)
+
+
 def _apply_lightweight_migrations(engine: Engine) -> None:
     """Add newly-introduced columns to an already-existing SQLite file.
 

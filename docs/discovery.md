@@ -176,6 +176,22 @@ of 27%, would have looked comparable on `overall_fit` alone but ranked
 lower once bridge/direction were factored in) — see the Phase 2.5 report
 for the full breakdown.
 
+## Phase 3 update: pursue-worthiness leads the output
+
+As of Phase 3, each `jobs discover` result also carries a full
+`OpportunityDecision` (eligibility, qualification, opportunity cost,
+scope, freshness, and a final pursue recommendation) computed via
+`ingestion/evaluation.py::evaluate_opportunity` — the same reasoning chain
+`jobs evaluate` prints in full. The result listing leads with
+`Pursue: <RECOMMENDATION>`, and the run summary includes a `Pursue
+breakdown` line (counts per recommendation across every unique job
+discovered, not just the displayed slice). See
+docs/eligibility.md and docs/pursue-recommendation.md for what drives
+that recommendation — bridge role and immediate/direction assessments
+(Phase 2.5) remain visible per-opportunity but no longer solely determine
+ranking priority the way they did before hard eligibility/qualification
+gates existed.
+
 ## What Phase 2.5 deliberately did not add
 
 Per the phase's own scope boundary: no scheduled ingestion, no background

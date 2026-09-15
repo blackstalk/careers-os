@@ -11,7 +11,7 @@ of whether a job came from Creative Circle, Greenhouse, Lever, LinkedIn, a
 company careers page, or manual entry. No package outside
 `sources/<name>/` is permitted to import anything from inside one.
 
-## Pipeline (Phase 2)
+## Pipeline (Phase 3)
 
 ```mermaid
 flowchart TD
@@ -58,7 +58,23 @@ flowchart TD
 
     DB --> CLI[CLI: search / show / match / evidence / gaps / recommend-resume]
     ResumeRec --> CLI
-    CLI --> Human[Human review: save / reject / apply]
+
+    Result --> Eligibility[Eligibility check — candidate.yaml vs. job text]
+    ExpFit --> Qualification[Qualification gate — hard-required vs. preferred]
+    Qualification --> Reasoner[Optional AI evidence reasoner — cite-or-reject]
+    Eligibility --> Decision[OpportunityDecision]
+    Qualification --> Decision
+    Reasoner -.annotates ExperienceFitDetail only, never match_type.-> Qualification
+    Decision --> Cost[Opportunity cost]
+    Decision --> Scope[Scope/ownership]
+    Decision --> Fresh[Freshness]
+    Cost --> Pursue[Pursue recommendation — hard gates dominate]
+    Scope --> Pursue
+    Fresh --> Pursue
+    Pursue --> DB
+
+    DB --> CLI2[CLI: discover / evaluate / show]
+    CLI2 --> Human[Human review: save / reject / apply]
     Human --> DB
 ```
 
@@ -67,9 +83,12 @@ the `JobSource` contract) and nothing downstream needs to change — proven
 in practice by adding Greenhouse without touching `domain/`, `storage/`,
 or `scoring/` (see docs/sources/greenhouse.md's "second-source
 validation" section for what *did* need to flex, and where it lived).
-The new element in Phase 2 is the evidence layer running alongside
-scoring: **jobs are matched against evidence, not just keywords** — see
-docs/evidence-model.md.
+Phase 2 added the evidence layer running alongside scoring: **jobs are
+matched against evidence, not just keywords** (docs/evidence-model.md).
+Phase 3 adds the decision layer on top of that: **a good match is not the
+same question as whether it's worth pursuing** — eligibility,
+qualification, and opportunity cost each can independently override an
+otherwise-strong fit (docs/eligibility.md, docs/pursue-recommendation.md).
 
 ## Layers
 
@@ -85,8 +104,11 @@ src/careers_os/
     requirements.py    JobRequirement
     evidence.py        Evidence, EvidenceProvenance
     resume.py          CareerRole, RoleFraming, ProjectEvidenceEntry, ResumeVariant
-    matching.py        MatchType, GapType, RequirementMatch, EvidenceRef
+    matching.py        MatchType, GapType, RequirementMatch, EvidenceRef, AIAssessmentType
     experience.py       ExperienceFitDetail, YearsEstimate
+    eligibility.py       EligibilityStatus, EligibilityCheck, EligibilityResult
+    qualification.py     QualificationStatus, QualificationResult
+    opportunity_decision.py  OpportunityCost/Scope/Freshness/Pursue results, OpportunityDecision
 
   sources/
     base.py            JobSource ABC every adapter implements + SourceHealth
@@ -95,37 +117,51 @@ src/careers_os/
     greenhouse/        second adapter — all Greenhouse-specific code lives here only
       constants.py, client.py, parser.py, source.py, config.py, boards.yaml
 
-  career/              what I'm targeting, and what I've done — configuration + parsing, not scoring logic
-    profile.py, preferences.py, data/profile.yaml, data/preferences.yaml
+  career/              what I'm targeting, what I've done, and what I'll accept — config + parsing, not scoring logic
+    profile.py, preferences.py, candidate.py    data/profile.yaml, data/preferences.yaml, data/candidate.yaml
     skills.py            loads data/skills_taxonomy.yaml
     resume_import.py     deterministic DOCX -> CareerRole/RoleFraming/Evidence
     timeline.py           interval merging, years-of-experience estimation
     resume_recommendation.py
+    search_profiles.py    data/search_profiles.yaml — configurable discovery queries
+    bridge_role.py         category-presence bridge-role classification
+    opportunity_value.py   immediate-opportunity / career-direction assessment
+    discovery_ranking.py   multi-dimension rank score for `jobs discover`
+    eligibility.py         deterministic hard-constraint evaluation (timezone, auth, clearance, ...)
+    opportunity_cost.py    high/moderate/low/unknown opportunity-cost classification
+    scope.py               execution/ownership/architecture/... scope classification
+    freshness.py           fresh/recent/aging/stale posting-age classification
+    pursue.py              final pursue recommendation — hard gates dominate
 
   scoring/
     deterministic.py    rule-based, explainable component scorers (role/technical/career-direction/comp/work-arrangement + the no-resume experience_fit fallback)
-    requirements.py       deterministic job-requirement extraction
+    requirements.py       deterministic job-requirement extraction (+ RequirementImportance)
     evidence_matcher.py   EvidenceIndex + match_requirement + real experience_fit
+    evidence_reasoner.py  optional AI evidence reasoner (EvidenceReasoner ABC, Claude default) — guardrailed, cite-or-reject
+    qualification.py      hard-required vs. preferred qualification gating
     ai.py                optional LLM refinement (no-ops without an API key; role_fit/career_direction_fit only)
     engine.py            combines deterministic (+ optional evidence + optional AI) -> CareerFitResult
 
   storage/
     db.py                SQLAlchemy models: jobs, raw_jobs, job_scores, resume_variants,
                           career_roles, role_framings, project_evidence, evidence,
-                          possible_duplicates, job_changes
-    repository.py        JobRepository — dedup + status-preserving upsert + change log + duplicate scan
+                          possible_duplicates, job_changes, job_evaluations
+    repository.py        JobRepository — dedup + status-preserving upsert + change log + duplicate scan +
+                          evaluation persistence; job_record_to_normalized/latest_fit_from_record helpers
     resume_repository.py ResumeRepository — resume/evidence persistence + EvidenceIndex loading
     dedup.py             conservative cross-source duplicate signal scoring
 
   ingestion/
     pipeline.py          search -> normalize -> upsert -> score (with evidence), in one place
+    discovery.py          multi-profile, multi-source discovery + ranking + per-opportunity decision
+    evaluation.py          orchestrates eligibility + qualification + AI reasoning + cost/scope/freshness -> OpportunityDecision
 
   observability/
     logging.py           structured (JSON-line) logging
 
-  cli.py                 `jobs search creative-circle|greenhouse|greenhouse-all`, `list`, `show`,
-                          `match`, `evidence`, `gaps`, `recommend-resume`, `duplicates`, `history`,
-                          `status`, `health`; `careers import-resume`, `resumes`, `experience`
+  cli.py                 `jobs search creative-circle|greenhouse|greenhouse-all`, `discover`, `evaluate`,
+                          `list`, `show`, `match`, `evidence`, `gaps`, `recommend-resume`, `duplicates`,
+                          `history`, `status`, `health`; `careers import-resume`, `resumes`, `experience`
 ```
 
 ## Deduplication
@@ -192,44 +228,46 @@ the adapter's lifetime (see `CreativeCircleSource.health`). This is
 intentionally simple for one source; a future multi-source scheduler would
 aggregate these to decide which sources to trust or skip.
 
-## Recommended Phase 3
+## Recommended Phase 4
 
-Phase 2 delivered: a second source (Greenhouse), a structured resume/
-evidence model with provenance, a real deterministic `experience_fit`
-replacing the placeholder, requirement-vs-evidence matching with an
-explicit gap taxonomy, resume-variant recommendation, conservative
-cross-source duplicate flagging, and field-level change tracking. Roughly
-in priority order for what's next:
+Phase 3 delivered the opportunity-decision layer on top of Phase 1/2's
+ingestion and evidence matching: eligibility (separate from fit),
+qualification gating (hard-required vs. preferred), an optional AI
+evidence-reasoning layer with enforced citation guardrails, opportunity
+cost, scope/ownership classification, freshness, and a final pursue
+recommendation where hard gates dominate — see
+docs/eligibility.md and docs/pursue-recommendation.md. Roughly in
+priority order for what's next:
 
-1. **AI-assisted evidence reasoning, with real guardrails.** The
-   deterministic matcher is intentionally literal (exact taxonomy alias
-   matching only — see docs/evidence-model.md's PHP/Laravel example of
-   honest under-counting). An AI layer that reasons about adjacent-skill
-   similarity, explains transferable experience, or helps resolve
-   `unknown`-category (non-taxonomy) requirements would add real value —
-   *if* it's required to cite specific evidence IDs for every claim and is
-   structurally prevented from upgrading a citation-less claim to a match
-   (mirroring how `scoring/ai.py` already can't touch `experience_fit` at
-   all today).
-2. **Scheduled ingestion + closure detection.** Now that there are two
-   real sources and change tracking, a daily scheduled sync plus a
-   direct-fetch closure check (rather than inferring closure from a
-   missing search hit) becomes worth the complexity.
+1. **Evaluation staleness detection.** Phase 3's own development exposed
+   this directly: `jobs evaluate` reads the latest *stored* score rather
+   than recomputing, and a requirement-extraction bugfix made mid-phase
+   left one regression case showing a stale qualification result until
+   re-searched. `SCORER_VERSION`/`EVALUATION_VERSION` exist but nothing
+   compares them against "current" to flag a stored result as outdated.
+   Worth solving before this matters more (see
+   docs/pursue-recommendation.md's evaluation-versioning section).
+2. **Scheduled ingestion + closure detection.** Unchanged from the Phase 2
+   recommendation — now with a pursue-recommendation layer that would
+   directly benefit from knowing when a `stale` job has actually closed,
+   rather than continuing to show it as `verify_first`/`low_priority`
+   indefinitely.
 3. **A third source with a materially different shape** (e.g. Lever, or a
    plain company careers page with no API at all) to further stress-test
-   the `JobSource` abstraction — Greenhouse validated "documented API, no
-   server-side filtering"; a scrape-only source would validate the
-   opposite end of the spectrum.
+   the `JobSource` abstraction.
 4. **Portfolio/GitHub evidence sources.** `EvidenceProvenance.source_type`
    already supports `"portfolio"` and `"github"` — only the resume
-   importer exists today. A GitHub-repo evidence importer would let
-   `technical_fit`/`experience_fit` draw on real shipped code, not just
-   resume prose.
-5. **Company intelligence** — enrich `NormalizedJob.company` with an
-   external lookup (funding, engineering culture signals, tech stack) once
-   there's a reason to trust a given company field consistently across
-   sources.
-6. **Resume-language gap remediation** — since `resume_language_gap` is
-   already a distinct, machine-identified category (docs/evidence-model.md),
-   a natural next feature is suggesting the actual bullet rewrite that
-   would close it, rather than just flagging that one exists.
+   importer exists today.
+5. **Resume-language gap remediation.** Both the deterministic
+   `resume_language_gap` classification (Phase 2) and the AI reasoner's
+   `resume_language_gap` assessment (Phase 3) identify *that* a bullet
+   undersells existing work — a natural next feature is suggesting the
+   actual rewrite, never applying it automatically.
+6. **Company intelligence** — enrich `NormalizedJob.company` with an
+   external lookup (funding, engineering culture signals, tech stack)
+   once there's a reason to trust a given company field consistently
+   across sources.
+7. **Degree/certification/license eligibility checks.** Deliberately not
+   implemented in Phase 3 (docs/eligibility.md) because most real postings
+   hedge with "or equivalent experience" — worth building once there's a
+   reliable way to detect the hedge itself, not just the requirement.

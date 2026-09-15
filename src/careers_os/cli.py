@@ -12,9 +12,10 @@ from careers_os.career.resume_recommendation import recommend_resume_variant
 from careers_os.career.search_profiles import SearchProfilesConfig
 from careers_os.career.timeline import humanize_years
 from careers_os.domain.enums import EmploymentType, JobStatus
-from careers_os.domain.matching import MatchType
+from careers_os.domain.matching import AIAssessmentType, MatchType
 from careers_os.domain.query import JobSearchQuery, SortOrder
 from careers_os.ingestion.discovery import DiscoveryOpportunity, run_discovery
+from careers_os.ingestion.evaluation import evaluate_opportunity
 from careers_os.ingestion.pipeline import IngestionResult, run_search_ingestion
 from careers_os.observability.logging import configure_logging
 from careers_os.career.evidence_index import EvidenceIndex
@@ -23,7 +24,11 @@ from careers_os.sources.creative_circle.source import CreativeCircleSource
 from careers_os.sources.greenhouse.config import GreenhouseBoardsConfig
 from careers_os.sources.greenhouse.source import GreenhouseSource
 from careers_os.storage.db import get_engine, get_session
-from careers_os.storage.repository import JobRepository
+from careers_os.storage.repository import (
+    JobRepository,
+    job_record_to_normalized,
+    latest_fit_from_record,
+)
 from careers_os.storage.resume_repository import ResumeRepository
 
 load_dotenv()
@@ -254,15 +259,34 @@ def search_greenhouse_all(
     _print_results_table(combined)
 
 
+_PURSUE_COLOR = {
+    "strong_pursue": "bold green",
+    "pursue": "green",
+    "consider": "yellow",
+    "low_priority": "yellow",
+    "verify_first": "bold yellow",
+    "do_not_pursue": "red",
+}
+
+
 def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
     job = opp.job
+    decision = opp.decision
+    pursue = decision.pursue.recommendation.value
+    color = _PURSUE_COLOR.get(pursue, "white")
+
     console.print(f"[bold]{rank}. {job.title}[/bold]")
-    console.print(f"   Company: {job.company or 'unknown'}")
-    console.print(f"   Source: {job.source}")
-    console.print(f"   Overall Fit: {opp.fit.overall_fit * 100:.0f}%")
-    console.print()
-    console.print(f"   Immediate Opportunity: {opp.immediate.level.value.capitalize()}")
-    console.print(f"   Career Bridge: {opp.bridge.classification.value.capitalize()}")
+    console.print(f"   Company: {job.company or 'unknown'}  |  Source: {job.source}")
+    console.print(f"   [{color}]Pursue: {pursue.replace('_', ' ').upper()}[/{color}]")
+    console.print(f"   Eligibility: {decision.eligibility.status.value}  |  "
+                  f"Qualification: {decision.qualification.status.value}  |  "
+                  f"Career Direction: {opp.direction.level.value}  |  "
+                  f"Compensation: {_comp_str(job)}")
+    console.print(f"   ({decision.pursue.reason})")
+    console.print(f"   Overall Fit: {opp.fit.overall_fit * 100:.0f}%  |  "
+                  f"Immediate Opportunity: {opp.immediate.level.value}  |  "
+                  f"Career Bridge: {opp.bridge.classification.value}  |  "
+                  f"Opportunity Cost: {decision.opportunity_cost.level.value}")
 
     detail = opp.fit.experience_detail
     if detail is not None and detail.strong_matches:
@@ -270,22 +294,24 @@ def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
         console.print("   Strong Evidence:")
         for m in detail.strong_matches[:6]:
             console.print(f"   [green]✓[/green] {m.requirement.text}")
-    if detail is not None and detail.real_experience_gaps:
+    if qual_gaps := decision.qualification.hard_gaps:
+        console.print()
+        console.print("   Hard Requirement Gap:")
+        for m in qual_gaps:
+            console.print(f"   [red]✗[/red] {m.requirement.text}")
+    elif detail is not None and detail.real_experience_gaps:
         console.print()
         console.print("   Gap:")
         for m in detail.real_experience_gaps[:3]:
             console.print(f"   [red]✗[/red] {m.requirement.text}")
 
-    console.print()
-    console.print(f"   Compensation: {_comp_str(job)}")
-
     if detail is not None:
         rec = recommend_resume_variant(detail)
         if rec.recommended_variant:
-            console.print(f"   Recommended Resume: {rec.recommended_variant}")
+            console.print(f"\n   Recommended Resume: {rec.recommended_variant}")
 
-    console.print(f"   Matched profiles: {', '.join(opp.matched_profiles) or '-'}")
-    console.print(f"   Why it ranks: {opp.bridge.reason}")
+    console.print(f"   Matched profiles: {', '.join(opp.matched_profiles) or '-'}  |  "
+                  f"Freshness: {decision.freshness.level.value}")
     console.print(f"   Job: {job.source}/{job.source_job_id}  |  {job.source_url}")
     console.print()
 
@@ -373,6 +399,9 @@ def discover(
     console.print(f"Strong bridge roles: {m.strong_bridge_roles}")
     console.print(f"New jobs: {m.new_jobs}")
     console.print(f"Updated jobs: {m.updated_jobs}")
+    if m.pursue_counts:
+        counts = ", ".join(f"{k}={v}" for k, v in sorted(m.pursue_counts.items()))
+        console.print(f"Pursue breakdown: {counts}")
     for note in result.notes:
         console.print(f"[yellow]note:[/yellow] {note}")
     console.print()
@@ -433,6 +462,16 @@ def show_job(source: str, source_job_id: str) -> None:
     console.print(f"Status: {job.status}  |  First seen: {job.first_seen_at}  |  "
                   f"Last seen: {job.last_seen_at}")
     console.print(f"URL: {job.source_url}")
+
+    latest_evaluation = repo.get_latest_evaluation(job.id)
+    if latest_evaluation is not None:
+        pursue = latest_evaluation.pursue_recommendation
+        color = _PURSUE_COLOR.get(pursue, "white")
+        console.print(
+            f"[{color}]Pursue: {pursue.replace('_', ' ').upper()}[/{color}] — "
+            f"{latest_evaluation.pursue_reason} (run `jobs evaluate {job.source} {job.source_job_id}` "
+            f"for the full reasoning chain)"
+        )
     if job.recruiter_name:
         console.print(f"Recruiter: {job.recruiter_name} <{job.recruiter_contact or 'no email published'}>")
     if job.scores:
@@ -602,6 +641,134 @@ def recommend_resume(source: str, source_job_id: str) -> None:
     console.print(f"\nWhy '{rec.recommended_variant}':")
     for reason in rec.reasons.get(rec.recommended_variant, []):
         console.print(f"  - {reason}")
+
+
+@app.command("evaluate")
+def evaluate_job(
+    source: str,
+    source_job_id: str,
+    ai: bool = typer.Option(
+        True, "--ai/--no-ai", help="Use AI evidence reasoning on ambiguous gaps if ANTHROPIC_API_KEY is set."
+    ),
+) -> None:
+    """Full opportunity-decision report: eligibility, qualification,
+    transferable evidence, career direction, opportunity cost, scope, and
+    freshness — the complete reasoning chain behind a pursue
+    recommendation. Persists the evaluation. See docs/pursue-recommendation.md.
+    """
+    job_record = _get_job_or_exit(source, source_job_id)
+    fit = latest_fit_from_record(job_record)
+    if fit is None:
+        console.print("No stored score for this job yet — run a search or `jobs discover` first.")
+        raise typer.Exit(code=1)
+
+    normalized = job_record_to_normalized(job_record)
+    evidence_index = _evidence_index()
+    result = evaluate_opportunity(normalized, fit, evidence_index=evidence_index, use_ai=ai)
+
+    repo = _repository()
+    repo.save_evaluation(job_record.id, result.decision)
+    repo.commit()
+
+    _print_evaluation_report(job_record, result)
+
+
+def _print_evaluation_report(job_record, result) -> None:
+    decision = result.decision
+    fit = result.fit
+    detail = fit.experience_detail
+    pursue = decision.pursue.recommendation.value
+    color = _PURSUE_COLOR.get(pursue, "white")
+
+    console.print(f"[bold]{(job_record.company or '').upper()} — {job_record.title.upper()}[/bold]\n")
+    console.print(f"[bold]PURSUE:[/bold] [{color}]{pursue.replace('_', ' ').upper()}[/{color}]")
+    console.print(f"[bold]WHY:[/bold] {decision.pursue.reason}\n")
+
+    console.print("[bold]ELIGIBILITY[/bold]")
+    console.print(f"Status: {decision.eligibility.status.value}")
+    for check in decision.eligibility.checks:
+        symbol = {"eligible": "[green]✓[/green]", "ineligible": "[red]✗[/red]"}.get(
+            check.status.value, "[yellow]⚠[/yellow]"
+        )
+        console.print(f"  {symbol} {check.requirement}")
+        console.print(f"    Candidate: {check.candidate_evidence}")
+        console.print(f"    {check.reason}")
+    console.print()
+
+    console.print("[bold]QUALIFICATION[/bold]")
+    console.print(f"Status: {decision.qualification.status.value}")
+    console.print(f"{decision.qualification.reason}\n")
+    if detail is not None:
+        if detail.strong_matches:
+            console.print("Direct Evidence:")
+            for m in detail.strong_matches:
+                console.print(f"  [green]✓[/green] {m.requirement.text}")
+        transferable = [
+            m for m in detail.requirement_matches
+            if m.ai_assessment and m.ai_assessment.assessment_type == AIAssessmentType.TRANSFERABLE_CAPABILITY
+        ]
+        if transferable:
+            console.print("\nTransferable Evidence:")
+            for m in transferable:
+                console.print(f"  [yellow]~[/yellow] {m.requirement.text}")
+                console.print(f"    {m.ai_assessment.reason}")
+                console.print("    Does NOT claim direct experience with the missing skill itself.")
+        if decision.qualification.hard_gaps:
+            console.print("\nHard Requirement Gap:")
+            for m in decision.qualification.hard_gaps:
+                console.print(f"  [red]✗[/red] {m.requirement.text} — {m.reason}")
+        elif detail.real_experience_gaps:
+            console.print("\nReal Gaps:")
+            for m in detail.real_experience_gaps:
+                if m in transferable:
+                    continue
+                console.print(f"  [red]✗[/red] {m.requirement.text}")
+    console.print()
+
+    console.print("[bold]CAREER DIRECTION[/bold]")
+    console.print(f"{result.direction.level.value}: {result.direction.reason}")
+    if result.bridge.signals:
+        console.print("Bridge Signals:")
+        for s in result.bridge.signals:
+            console.print(f"  [green]✓[/green] {s}")
+    console.print()
+
+    console.print("[bold]OPPORTUNITY VALUE[/bold]")
+    console.print(f"Immediate Opportunity: {result.immediate.level.value} ({result.immediate.reason})")
+    console.print()
+
+    console.print("[bold]OPPORTUNITY COST[/bold]")
+    console.print(f"{decision.opportunity_cost.level.value}: {decision.opportunity_cost.reason}\n")
+
+    if detail is not None:
+        rec = recommend_resume_variant(detail)
+        if rec.recommended_variant:
+            console.print(f"[bold]RECOMMENDED RESUME[/bold]\n{rec.recommended_variant}\n")
+
+        resume_language = [
+            m for m in detail.requirement_matches
+            if (m.gap_type and m.gap_type.value == "resume_language_gap")
+            or (m.ai_assessment and m.ai_assessment.assessment_type == AIAssessmentType.RESUME_LANGUAGE_GAP)
+        ]
+        if resume_language:
+            console.print("[bold]RESUME LANGUAGE OPPORTUNITIES[/bold]")
+            for m in resume_language:
+                console.print(f"  - {m.requirement.text}")
+            console.print()
+
+        interview_prep = [
+            m for m in detail.requirement_matches
+            if (m.gap_type and m.gap_type.value == "interview_prep_gap")
+            or (m.ai_assessment and m.ai_assessment.assessment_type == AIAssessmentType.INTERVIEW_PREP_GAP)
+        ]
+        if interview_prep:
+            console.print("[bold]INTERVIEW PREP[/bold]")
+            for m in interview_prep:
+                console.print(f"  - {m.requirement.text}")
+            console.print()
+
+    console.print("[bold]FRESHNESS[/bold]")
+    console.print(f"{decision.freshness.level.value} ({decision.freshness.reason})")
 
 
 @app.command("duplicates")

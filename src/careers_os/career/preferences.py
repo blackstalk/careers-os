@@ -59,11 +59,23 @@ class DiscoveryRankingWeights(BaseModel):
         return self.model_dump()
 
 
+class FreshnessThresholds(BaseModel):
+    """Age-in-days boundaries for career/freshness.py's fresh/recent/aging/
+    stale classification. Configurable rather than hard-coded — see
+    docs/pursue-recommendation.md#freshness.
+    """
+
+    fresh_days: int = 7
+    recent_days: int = 30
+    aging_days: int = 90
+
+
 class Preferences(BaseModel):
     compensation: CompensationPreferences
     work_arrangement: WorkArrangementPreferences
     component_weights: ComponentWeights
     discovery_ranking_weights: Optional[DiscoveryRankingWeights] = None
+    freshness_thresholds: Optional[FreshnessThresholds] = None
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "Preferences":
