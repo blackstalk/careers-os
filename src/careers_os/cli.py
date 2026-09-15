@@ -596,6 +596,7 @@ _ALERT_OUTCOME_LABEL = {
     "failed": "[red]✗ failed[/red]",
     "suppressed_duplicate": "[yellow]- suppressed (already alerted)[/yellow]",
     "dry_run": "[cyan]would send[/cyan]",
+    "deferred": "[dim]- deferred (alert budget)[/dim]",
 }
 
 
@@ -686,6 +687,11 @@ def run_scheduled(
     console.print(f"Eligible: {m.eligible_count}")
     console.print(f"Meeting pursue threshold (pursue/strong_pursue): {m.pursue_threshold_count}")
     console.print(f"Meeting alert threshold ({preferences.operating_mode.value} mode): {m.alert_threshold_count}")
+    console.print(f"Opportunity clusters/families: {m.opportunity_clusters}")
+    console.print(f"Clustered variants (absorbed into a family): {m.clustered_variant_count}")
+    console.print(f"Alert budget ({preferences.operating_mode.value} mode): {m.alert_budget}")
+    console.print(f"Selected for alert: {m.alerts_selected}")
+    console.print(f"Deferred (over budget): {m.alerts_deferred}")
     console.print(f"Notifications attempted: {m.notifications_attempted}")
     console.print(f"Notifications sent: {m.notifications_sent}")
     console.print(f"Suppressed as duplicates: {m.notifications_suppressed_duplicate}")
@@ -700,15 +706,17 @@ def run_scheduled(
         )
         return
 
-    console.print("\n[bold]Alert outcomes:[/bold]")
+    console.print("\n[bold]Alert outcomes[/bold] (one row per opportunity family — see 'Opportunity clusters' above):")
     for outcome in result.alerts:
         label = _ALERT_OUTCOME_LABEL.get(outcome.status, outcome.status)
         job = outcome.opportunity.job
         line = f"  {label}  {job.title} — {job.company or 'unknown'} ({job.source})"
+        if outcome.related_variant_count:
+            line += f"  [dim](+{outcome.related_variant_count} related variant(s))[/dim]"
         if outcome.error:
             line += f"  [red]{outcome.error}[/red]"
         console.print(line)
-        if dry_run and outcome.status == "dry_run":
+        if dry_run and outcome.status in ("dry_run", "deferred"):
             console.print(f"    {outcome.content.subject}")
             for reason in outcome.content.reasons:
                 console.print(f"      + {reason}")

@@ -62,7 +62,18 @@ alert_policy:
   # for high compensation, a keyword match, or plain eligibility.
   # `verify_first` and `do_not_pursue` are never alert-eligible in either
   # mode, regardless of this setting.
+  #
+  # `max_alerts_per_run` (Phase 4.1) caps how many notifications one run
+  # may send, after related postings are clustered and the strongest
+  # representative of each family is ranked using existing fit/pursue
+  # signals — see docs/alerts.md#alert-prioritization-and-opportunity-clustering.
+  # Crossing `minimum_pursue` makes an opportunity *eligible*; this budget
+  # decides how many eligible opportunities actually interrupt you this
+  # run. Deferred opportunities are never marked as alerted and remain
+  # eligible for a future run.
   passive:
     minimum_pursue: strong_pursue
+    max_alerts_per_run: 5
   active:
     minimum_pursue: pursue
+    max_alerts_per_run: 5

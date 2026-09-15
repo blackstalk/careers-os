@@ -128,6 +128,127 @@ must not permanently suppress a real opportunity. See
 `tests/test_scheduled_run.py` (`test_failed_send_does_not_suppress_retry`,
 `test_failed_send_not_marked_as_alerted`).
 
+## Alert prioritization and opportunity clustering (Phase 4.1)
+
+Adding the Ashby/Lever sources (docs/source-evaluation.md) immediately
+exposed a real problem: a single `jobs run --dry-run --source ashby`
+against a large, genuinely well-matched company (OpenAI) surfaced 44
+opportunities that legitimately crossed the passive `strong_pursue`
+threshold in one run — mostly because a company posts many near-duplicate
+variants of the same role (different team, region, or segment). Every one
+of those 44 was individually correct; sending 44 emails at once is not.
+
+### Detection vs. interruption
+
+**Detection and notification selection are separate concerns.** Whether
+an opportunity is *good* is decided entirely by the existing pipeline
+(eligibility → qualification → transferable fit → career direction →
+opportunity value → pursue-worthiness) and `should_alert`
+(`notifications/policy.py`) — nothing in this section changes that, and
+none of it exists to reduce how many opportunities are *found*. What's
+new is a second question asked only of opportunities that already passed
+detection: of everything eligible right now, which subset actually
+deserves an interruption *this run*? The rest aren't discarded — they're
+deferred, and remain fully eligible for a future run.
+
+### Opportunity families
+
+`notifications/clustering.py::cluster_opportunities` groups already
+alert-eligible opportunities into families using only structured data
+already on the job record — company, title, and the job's own location —
+never a new model, embedding, or LLM call:
+
+- Two opportunities cluster only if they share the same **company** and
+  the same **title family** — a title with a trailing segment stripped
+  when that segment is either a small, industry-generic qualifier
+  (remote/hybrid/onsite, enterprise/startups/commercial, public
+  sector/government, new grad/intern) or textually derived from the
+  job's own `location` field (e.g. "Applied AI Architect - Tokyo"
+  alongside a location of "Tokyo, Japan").
+- Everything else about the title is left alone. A title like "Physical
+  Design Engineer, Forward Deployed Engineering" is never truncated to
+  "Physical Design Engineer" — nothing in the stripped-suffix vocabulary
+  matches "Forward Deployed Engineering", so it's kept whole. Under-
+  clustering (treating two related roles as separate) is the deliberate
+  failure mode over over-clustering (incorrectly merging two different
+  roles) — see `tests/test_clustering.py`.
+- Company identity is part of the key, so the same title at two
+  different companies never clusters, and provider identity
+  (Greenhouse/Ashby/Lever) is never part of the key at all — a cluster
+  forms or doesn't purely from company + title + location, regardless of
+  which source discovered it.
+
+**Clustering affects notification selection only.** It never deletes,
+merges, or mutates an opportunity record. Every discovered job — cluster
+representative or not — remains independently stored, scored via
+`repository.save_evaluation`, and inspectable via `jobs show`/`jobs
+evaluate` regardless of which family it was grouped into.
+
+### Representative selection and ranking
+
+Within a cluster, the strongest opportunity is picked as its
+representative — "strongest" meaning the existing pursue tier first,
+then the existing discovery `rank_score` (`career/discovery_ranking.py`,
+already blending overall fit, bridge-role strength, immediate
+opportunity, and career-direction alignment) as a tie-break. Cluster
+representatives are then ranked against each other using that exact same
+`(pursue tier, rank_score)` key — no new score, and no company/provider
+identity is ever part of the ranking, so an OpenAI opportunity and a
+Palantir opportunity of equal underlying strength rank identically.
+
+### Alert budget
+
+`AlertModeSettings.max_alerts_per_run` (`career/preferences.py`,
+default `5`, configured per operating mode in `preferences.yaml`) caps
+how many cluster representatives are actually attempted per run. Ranked
+representatives beyond the budget are marked `"deferred"` — not sent, not
+persisted as alerted, and therefore still fully alert-eligible next run.
+The alert body itself mentions related variants when relevant
+(`AlertContent.related_variant_count`, `notifications/content.py`):
+
+```
+Applied AI Engineer — OpenAI
+
+Strong match.
+...
+4 additional closely related OpenAI opportunities were also discovered.
+```
+
+### Deferred opportunities and the state-management invariant
+
+Crossing the pursue threshold makes an opportunity *eligible* for an
+alert; it does not mean the opportunity *was* alerted. Only a cluster
+representative that is both selected (within budget) and actually sent
+ever gets a `NotificationRecord` with `status="sent"` — a deferred
+representative, and every non-representative variant absorbed into any
+cluster, never reaches `repository.record_notification` at all. This is
+what lets a large first-run backlog (the original 44-opportunity case)
+drain naturally over subsequent runs, and what lets the same opportunity
+resurface if it's re-evaluated later, rather than being silently and
+permanently treated as "already handled." See
+`tests/test_alert_prioritization.py::TestDeferredStateInvariant` for the
+tests proving this directly, including a deferred opportunity
+successfully sending on a later run once budget allows it.
+
+### Dry-run observability
+
+`jobs run --dry-run` reports the full funnel so it's possible to see
+exactly why, say, 44 strong candidates produced only 5 notifications:
+
+```
+Meeting alert threshold (passive mode): 44
+Opportunity clusters/families: 12
+Clustered variants (absorbed into a family): 32
+Alert budget (passive mode): 5
+Selected for alert: 5
+Deferred (over budget): 7
+```
+
+`jobs health` (per-source connectivity diagnostics) was deliberately left
+untouched — the alert budget and clustering results are run-level policy
+output, not source health, and `jobs run`'s own header already surfaces
+the active budget every time it runs.
+
 ## Email configuration
 
 Email is sent over SMTP using only the standard library (`smtplib`,
@@ -221,10 +342,13 @@ only a new place to invoke `jobs run` — no change to
 
 Every run logs (`logger = logging.getLogger("careers_os.ingestion.scheduled_run")`)
 a start event and a completion event carrying jobs discovered/evaluated,
-eligible count, pursue/alert-threshold counts, and
+eligible count, pursue/alert-threshold counts, the Phase 4.1 clustering/
+budget counts (`opportunity_clusters`, `clustered_variant_count`,
+`alert_budget`, `alerts_selected`, `alerts_deferred`), and
 attempted/sent/suppressed/failure counts — no opportunity content or
 credential values. A failed notification is recorded as `status="failed"`
 with the channel's own error text and never marks the opportunity as
 alerted; it also never rolls back or corrupts the opportunity's stored
 evaluation, since the evaluation is saved (`repository.save_evaluation`)
-independently of, and before, the send attempt.
+independently of, and before, the send attempt — this holds regardless of
+whether the opportunity was a cluster representative or deferred.

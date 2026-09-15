@@ -42,6 +42,14 @@ class AlertContent:
     reasons: list[str] = field(default_factory=list)
     watchouts: list[str] = field(default_factory=list)
 
+    # Phase 4.1: how many other discovered postings were grouped into
+    # this same opportunity family (same company, closely related title —
+    # see notifications/clustering.py) and therefore didn't get their own
+    # separate alert this run. Purely informational — those opportunities
+    # remain fully stored/scored/inspectable, this just tells the reader
+    # they exist. 0 means no clustering happened for this alert.
+    related_variant_count: int = 0
+
     @property
     def subject(self) -> str:
         return f"Careers OS: {self.pursue.replace('_', ' ').title()} opportunity — {self.company} / {self.role}"
@@ -65,6 +73,13 @@ class AlertContent:
         if self.watchouts:
             lines += ["", "Watchouts:"]
             lines += [f"  - {w}" for w in self.watchouts]
+        if self.related_variant_count > 0:
+            plural = "s" if self.related_variant_count != 1 else ""
+            lines += [
+                "",
+                f"{self.related_variant_count} additional closely related {self.company} "
+                f"opportunit{'ies' if plural else 'y'} {'were' if plural else 'was'} also discovered.",
+            ]
         lines += ["", f"View Opportunity: {self.url}"]
         return "\n".join(lines)
 
@@ -140,6 +155,7 @@ def build_alert_content(
     source: str,
     url: str,
     result: EvaluationResult,
+    related_variant_count: int = 0,
 ) -> AlertContent:
     return AlertContent(
         company=company or "Unknown company",
@@ -156,4 +172,5 @@ def build_alert_content(
         opportunity_value=result.immediate.level.value,
         reasons=_build_reasons(result),
         watchouts=_build_watchouts(result),
+        related_variant_count=related_variant_count,
     )

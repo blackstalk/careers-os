@@ -78,9 +78,18 @@ class AlertModeSettings(BaseModel):
     operating mode — see docs/alerts.md#operating-modes. Deliberately just a
     `PursueRecommendation` value, not a new score: alert-worthiness is a
     threshold on the *existing* decision layer, never a competing model.
+
+    `max_alerts_per_run` (Phase 4.1) is the separate, config-driven cap on
+    how many notifications one `jobs run` may send — see
+    docs/alerts.md#alert-prioritization-and-opportunity-clustering.
+    Crossing the pursue threshold means an opportunity is *eligible* for
+    an alert, never that it *will* be alerted; this budget is what
+    actually decides how many of the eligible opportunities interrupt you
+    this run.
     """
 
     minimum_pursue: PursueRecommendation
+    max_alerts_per_run: int = 5
 
 
 class AlertPolicy(BaseModel):

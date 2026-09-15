@@ -152,3 +152,20 @@ class TestAlertContentFormatting:
         text = content.to_plain_text()
         assert "https://x.com/1" in text
         assert "STRONG PURSUE" in text or "strong_pursue" in text.lower()
+
+    def test_zero_related_variants_omits_the_line(self):
+        result = _result()
+        content = build_alert_content("Acme", "Role", "-", "-", "-", "s", "u", result)
+        assert "also discovered" not in content.to_plain_text()
+
+    def test_related_variants_mentioned_when_present(self):
+        result = _result()
+        content = build_alert_content("Acme", "Role", "-", "-", "-", "s", "u", result, related_variant_count=4)
+        text = content.to_plain_text()
+        assert "4 additional closely related Acme opportunities were also discovered." in text
+
+    def test_related_variant_count_uses_singular_grammar_for_one(self):
+        result = _result()
+        content = build_alert_content("Acme", "Role", "-", "-", "-", "s", "u", result, related_variant_count=1)
+        text = content.to_plain_text()
+        assert "1 additional closely related Acme opportunity was also discovered." in text
