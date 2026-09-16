@@ -118,3 +118,34 @@ class TestRequirementImportance:
         job = _job("5+ years of AWS experience required.")
         reqs = extract_requirements(job, SkillsTaxonomy.load())
         assert all(r.id for r in reqs)
+
+
+class TestWhatYouNeedHeading:
+    """Phase 4.1: Ashby-hosted postings (e.g. Ramp) use a "WHAT YOU NEED"
+    heading for their required list."""
+
+    def _hard(self, description):
+        from careers_os.domain.requirements import RequirementImportance
+        return {
+            r.canonical_skill for r in extract_requirements(_job(description))
+            if r.importance == RequirementImportance.HARD_REQUIRED
+        }
+
+    def test_years_threshold_under_what_you_need_is_hard_required(self):
+        hard = self._hard(
+            "ABOUT THE ROLE\nHelp customers integrate.\n\nWHAT YOU NEED\n"
+            " - 3+ years of hands-on experience working with SAP S/4HANA, including finance modules"
+        )
+        assert "erp_systems" in hard
+
+    def test_prose_mention_is_not_treated_as_a_heading(self):
+        hard = self._hard(
+            "We give you what you need to succeed. You'll use 3+ years of SAP S/4HANA experience daily."
+        )
+        assert "erp_systems" not in hard
+
+    def test_skill_without_years_under_what_you_need_is_only_required(self):
+        from careers_os.domain.requirements import RequirementImportance
+        reqs = extract_requirements(_job("WHAT YOU NEED\n - Experience with SAP S/4HANA"))
+        erp = next(r for r in reqs if r.canonical_skill == "erp_systems")
+        assert erp.importance == RequirementImportance.REQUIRED

@@ -47,7 +47,7 @@ def score_job(
     result = CareerFitResult(
         role_fit=deterministic.score_role_fit(job, profile),
         technical_fit=deterministic.score_technical_fit(job, profile),
-        career_direction_fit=deterministic.score_career_direction_fit(job, profile),
+        career_direction_fit=deterministic.score_career_direction_fit(job, profile, experience_detail),
         compensation_fit=deterministic.score_compensation_fit(job, preferences),
         work_arrangement_fit=deterministic.score_work_arrangement_fit(job, preferences),
         experience_fit=experience_fit,

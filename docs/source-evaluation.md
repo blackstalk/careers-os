@@ -74,3 +74,37 @@ qualification → transferable fit → career direction → opportunity value
 → pursue-worthiness → alert-policy pipeline as every other source, and
 won't alert unless they clear the same `strong_pursue` bar everything
 else has to clear.
+
+## Phase 4.1: a fifth source
+
+The first production runs showed the remaining gap was not volume but
+relevance — specifically remote roles on both transition paths
+(docs/discovery.md). Candidates were evaluated by live requests, not
+from memory:
+
+| Platform | Public, unauthenticated JSON? | Fits the per-company `JobSource` shape? | Verdict |
+|---|---|---|---|
+| **Workable** | Yes — `apply.workable.com/api/v1/widget/accounts/<slug>?details=true` | Yes | **Built** (docs/sources/workable.md) |
+| SmartRecruiters | Yes — `api.smartrecruiters.com/v1/companies/<id>/postings` | Yes | **Not built** — see below |
+| Workday | Only per tenant, with an opaque per-company site name that must be reverse-engineered from each careers page | No | Skip |
+| iCIMS | Official API is licensed and employer-credentialed; the free path is HTML scraping | No | Skip |
+| BambooHR | Yes — `<company>.bamboohr.com/careers/list` | Yes | Skip — inconsistent adoption, SMB-heavy, weak coverage for target roles |
+| Teamtailor / Recruitee | Yes | Yes | Skip — EU-centric customer base |
+| RemoteOK / Remotive / WeWorkRemotely | Yes (aggregator feeds) | No — cross-employer keyword feeds, a different kind of source | Possible future "aggregator" source category |
+
+**Why Workable.** Same shape as Greenhouse/Ashby/Lever, no auth,
+permissive `robots.txt`, a structured `telecommuting` flag, and it hosts
+two directly relevant employers: Laravel (stack-adjacent) and Hugging Face
+(target direction). Coverage is modest, and the doc says so.
+
+**Why not SmartRecruiters, despite better target-role coverage.** It was
+technically the strongest fit — confirmed live "Forward Deployed Solution
+Engineer – Applied AI" postings at ServiceNow, 600+ open roles, a
+structured `location.remote` flag, no auth. But
+`api.smartrecruiters.com/robots.txt` disallows every user agent except
+`LinkedInBot`, which is explicitly allowed on exactly the `/v1/companies/`
+path this API lives on. That is a clear signal the endpoint is meant for a
+named partner integration, not general third-party clients. This project's
+bar for new sources is "accessible responsibly," so it is documented here
+and deliberately not built. Revisit only if SmartRecruiters publishes a
+general-access policy for the posting API.

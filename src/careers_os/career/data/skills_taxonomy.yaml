@@ -179,6 +179,18 @@ automation:
   category: architecture
   adjacent: [integration, ai_ml]
 
+# Phase 4.1: enterprise finance ERP platforms. Production surfaced
+# "Technical Consultant, S/4HANA / Oracle Cloud / Workday Financials /
+# Microsoft Dynamics" roles requiring "3+ years hands-on" with one
+# specific ERP — without this entry that requirement was invisible and
+# the roles scored as strong matches on their generic API/integration
+# wording. CRM integration work is related (adjacent), not a substitute.
+erp_systems:
+  display_name: Enterprise ERP (SAP S/4HANA / Oracle / Workday / NetSuite / Dynamics)
+  aliases: ["s/4hana", "sap erp", "oracle cloud erp", "oracle fusion", "oracle erp", "netsuite", "workday financials", "hands-on experience working with workday", "microsoft dynamics", "dynamics 365", "dynamics f&o"]
+  category: domain
+  adjacent: [crm]
+
 crm:
   display_name: CRM Platforms (HubSpot/Salesforce)
   aliases: ["hubspot", "salesforce", "crm"]
@@ -196,6 +208,27 @@ ai_ml:
   aliases: ["machine learning", "artificial intelligence", " ai ", " ai-", "llm", "large language model", "ai-assisted", "ai-powered"]
   category: ai_ml
   adjacent: [automation, data_pipeline]
+
+# Phase 4.1: specialized ML work split out of the broad `ai_ml` entry.
+# Without these, "5+ years training large-scale models in PyTorch" in an
+# Applied AI posting was only ever recognized as generic `ai_ml` — which
+# LLM-application evidence satisfies directly — so a research/training
+# role looked like a strong match for application-level AI experience.
+# `ml_model_training` lists `ai_ml` as adjacent: application-level AI
+# evidence counts as related (adjacent), never as direct training
+# experience. `gpu_programming` has no adjacent skills — nothing else in
+# this taxonomy is a credible substitute for CUDA/kernel work.
+ml_model_training:
+  display_name: ML Model Training (PyTorch/TensorFlow/JAX)
+  aliases: ["pytorch", "tensorflow", " jax", "model training", "training models", "training large-scale models", "pre-training", "pretraining"]
+  category: ai_ml
+  adjacent: [ai_ml]
+
+gpu_programming:
+  display_name: GPU / CUDA Programming
+  aliases: ["cuda", "gpu kernel", "gpu programming"]
+  category: ai_ml
+  adjacent: []
 
 data_pipeline:
   display_name: Data Pipelines / OCR / Search Indexing

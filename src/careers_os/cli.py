@@ -31,6 +31,8 @@ from careers_os.sources.greenhouse.config import GreenhouseBoardsConfig
 from careers_os.sources.greenhouse.source import GreenhouseSource
 from careers_os.sources.lever.config import LeverCompaniesConfig
 from careers_os.sources.lever.source import LeverSource
+from careers_os.sources.workable.config import WorkableAccountsConfig
+from careers_os.sources.workable.source import WorkableSource
 from careers_os.storage.db import get_engine, get_session
 from careers_os.storage.repository import (
     JobRepository,
@@ -430,6 +432,43 @@ def search_lever_all(
     _print_results_table(combined)
 
 
+@search_app.command("workable")
+def search_workable(
+    account: str = typer.Option(..., "--account", help="Workable account slug, e.g. 'laravel'."),
+    query: Optional[str] = typer.Option(None, "--query", help="Keyword/title search (client-side)."),
+    location: Optional[str] = typer.Option(None, "--location", help="Location text search (client-side)."),
+    remote: bool = typer.Option(False, "--remote", help="Remote-only (telecommuting flag)."),
+    days: Optional[int] = typer.Option(None, "--days", help="Posted within N days."),
+    employment_type: Optional[EmploymentType] = typer.Option(None, "--employment-type"),
+    sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
+    limit: int = typer.Option(20, "--limit", help="Max results per page."),
+    score: bool = typer.Option(True, "--score/--no-score"),
+    ai: bool = typer.Option(True, "--ai/--no-ai"),
+) -> None:
+    """Search one Workable account and ingest/normalize/score real results.
+
+    Example:
+        jobs search workable --account laravel --remote
+    """
+    search_query = _build_query(query, location, remote, days, employment_type, sort, limit)
+
+    repo = _repository()
+    with WorkableSource(account) as source:
+        result = run_search_ingestion(
+            source, search_query, repo, score=score, use_ai=ai, evidence_index=_evidence_index()
+        )
+        health = source.health()
+
+    _print_health_line(
+        f"Workable ({account})", health, result.jobs_discovered, result.jobs_new,
+        result.jobs_updated, result.parser_errors,
+    )
+    _print_results_table(result.ranked_jobs)
+
+
+_SOURCE_CHOICES = ("creative-circle", "greenhouse", "ashby", "lever", "workable")
+
+
 _PURSUE_COLOR = {
     "strong_pursue": "bold green",
     "pursue": "green",
@@ -450,6 +489,7 @@ def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
     console.print(f"   Company: {job.company or 'unknown'}  |  Source: {job.source}")
     console.print(f"   [{color}]Pursue: {pursue.replace('_', ' ').upper()}[/{color}]")
     console.print(f"   Eligibility: {decision.eligibility.status.value}  |  "
+                  f"Work Arrangement: {job.remote_status.value}  |  "
                   f"Qualification: {decision.qualification.status.value}  |  "
                   f"Career Direction: {opp.direction.level.value}  |  "
                   f"Compensation: {_comp_str(job)}")
@@ -493,7 +533,7 @@ def discover(
         None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
     ),
     source: Optional[str] = typer.Option(
-        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', or 'lever'. Default: all."
+        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', 'lever', or 'workable'. Default: all."
     ),
     remote: bool = typer.Option(False, "--remote", help="Remote-only."),
     employment_type: list[EmploymentType] = typer.Option(
@@ -520,8 +560,8 @@ def discover(
         jobs discover
         jobs discover --profile laravel --profile craft --remote --limit 10
     """
-    if source is not None and source not in ("creative-circle", "greenhouse", "ashby", "lever"):
-        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle, greenhouse, ashby, or lever)")
+    if source is not None and source not in _SOURCE_CHOICES:
+        console.print(f"[red]Unknown source: {source}[/red] (expected one of: {', '.join(_SOURCE_CHOICES)})")
         raise typer.Exit(code=1)
 
     profiles_config = SearchProfilesConfig.load()
@@ -548,6 +588,9 @@ def discover(
     if source in (None, "lever"):
         for company in LeverCompaniesConfig.load().companies:
             sources.append(("lever", LeverSource(company)))
+    if source in (None, "workable"):
+        for account in WorkableAccountsConfig.load().accounts:
+            sources.append(("workable", WorkableSource(account)))
 
     console.print("[bold]CAREER OS — DISCOVERY[/bold]")
     console.print(
@@ -606,7 +649,7 @@ def run_scheduled(
         None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
     ),
     source: Optional[str] = typer.Option(
-        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', or 'lever'. Default: all."
+        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', 'lever', or 'workable'. Default: all."
     ),
     remote: bool = typer.Option(False, "--remote", help="Remote-only."),
     employment_type: list[EmploymentType] = typer.Option(
@@ -627,8 +670,8 @@ def run_scheduled(
         jobs run --dry-run
         jobs run
     """
-    if source is not None and source not in ("creative-circle", "greenhouse", "ashby", "lever"):
-        console.print(f"[red]Unknown source: {source}[/red] (expected creative-circle, greenhouse, ashby, or lever)")
+    if source is not None and source not in _SOURCE_CHOICES:
+        console.print(f"[red]Unknown source: {source}[/red] (expected one of: {', '.join(_SOURCE_CHOICES)})")
         raise typer.Exit(code=1)
 
     profiles_config = SearchProfilesConfig.load()
@@ -656,6 +699,9 @@ def run_scheduled(
     if source in (None, "lever"):
         for company in LeverCompaniesConfig.load().companies:
             sources.append(("lever", LeverSource(company)))
+    if source in (None, "workable"):
+        for account in WorkableAccountsConfig.load().accounts:
+            sources.append(("workable", WorkableSource(account)))
 
     mode_label = f"{preferences.operating_mode.value}{' — DRY RUN' if dry_run else ''}"
     console.print(f"[bold]CAREER OS — SCHEDULED RUN[/bold] (mode: {mode_label})")
@@ -1172,9 +1218,9 @@ def set_status(source: str, source_job_id: str, status: JobStatus) -> None:
 
 @app.command("health")
 def health(
-    source_name: str = typer.Argument("creative-circle", help="creative-circle, greenhouse, ashby, or lever"),
+    source_name: str = typer.Argument("creative-circle", help="creative-circle, greenhouse, ashby, lever, or workable"),
     board: Optional[str] = typer.Option(
-        None, "--board", help="Required when source_name is greenhouse, ashby, or lever."
+        None, "--board", help="Required when source_name is greenhouse, ashby, lever, or workable."
     ),
 ) -> None:
     """Report a source adapter's current health (after a throwaway probe search)."""
@@ -1195,6 +1241,11 @@ def health(
             console.print("[red]--board is required for lever (company slug)[/red]")
             raise typer.Exit(code=1)
         source_cm = LeverSource(board)
+    elif source_name == "workable":
+        if not board:
+            console.print("[red]--board is required for workable (account slug)[/red]")
+            raise typer.Exit(code=1)
+        source_cm = WorkableSource(board)
     else:
         console.print(f"[red]Unknown source: {source_name}[/red]")
         raise typer.Exit(code=1)

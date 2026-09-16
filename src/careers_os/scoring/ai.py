@@ -18,6 +18,7 @@ from typing import Optional
 from careers_os.career.profile import CareerProfile
 from careers_os.domain.job import NormalizedJob
 from careers_os.domain.scoring import CareerFitResult, FitComponent
+from careers_os.scoring.deterministic import forward_direction_matches
 
 logger = logging.getLogger("careers_os.scoring.ai")
 
@@ -103,13 +104,27 @@ def apply_ai_evaluation(result: CareerFitResult, ai_result: dict) -> CareerFitRe
             confidence=max(updated.role_fit.confidence, 0.7),
         )
     if "career_direction_score" in ai_result:
-        updated.career_direction_fit = FitComponent(
-            score=float(ai_result["career_direction_score"]),
-            reason=ai_result.get(
-                "career_direction_reason", updated.career_direction_fit.reason
-            ),
-            evidence=updated.career_direction_fit.evidence,
-            confidence=max(updated.career_direction_fit.confidence, 0.7),
-        )
+        ai_score = float(ai_result["career_direction_score"])
+        ai_reason = ai_result.get("career_direction_reason", updated.career_direction_fit.reason)
+        if forward_direction_matches(updated.experience_detail):
+            # Evidence-grounded score: the AI judges whether the role is
+            # *really* in the target direction (title inflation), which
+            # can only lower it — it never sees candidate evidence, so it
+            # must never raise a score above what that evidence supports.
+            deterministic_score = updated.career_direction_fit.score
+            if ai_score < deterministic_score:
+                updated.career_direction_fit = FitComponent(
+                    score=ai_score,
+                    reason=f"{updated.career_direction_fit.reason} AI review lowered this: {ai_reason}",
+                    evidence=updated.career_direction_fit.evidence,
+                    confidence=updated.career_direction_fit.confidence,
+                )
+        else:
+            updated.career_direction_fit = FitComponent(
+                score=ai_score,
+                reason=ai_reason,
+                evidence=updated.career_direction_fit.evidence,
+                confidence=max(updated.career_direction_fit.confidence, 0.7),
+            )
     updated.ai_evaluation_included = True
     return updated

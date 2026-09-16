@@ -105,3 +105,35 @@ class TestAICannotTouchExperienceFit:
         assert updated.experience_fit == original_experience_fit
         assert updated.experience_detail == original_experience_detail
         assert updated.role_fit.score == 0.99
+
+
+class TestAICannotRaiseEvidenceGroundedCareerDirection:
+    """Phase 4.1: when career_direction_fit is grounded in real candidate
+    evidence, the AI (which never sees that evidence) may lower it for
+    title inflation but must never raise it."""
+
+    def _grounded_result(self, description: str):
+        job = _job(description)
+        return score_job(job, CareerProfile.load(), Preferences.load(), use_ai=False, evidence_index=_evidence_index())
+
+    def test_ai_cannot_raise_a_low_evidence_grounded_score(self):
+        # Kubernetes is a cloud-category requirement the fixture evidence
+        # only covers adjacently (AWS), so the grounded score is < 1.
+        result = self._grounded_result("Kubernetes experience required.")
+        grounded = result.career_direction_fit.score
+        assert grounded < 1.0
+        updated = ai.apply_ai_evaluation(result, {"career_direction_score": 1.0, "career_direction_reason": "looks great"})
+        assert updated.career_direction_fit.score == grounded
+
+    def test_ai_can_lower_an_evidence_grounded_score(self):
+        result = self._grounded_result("AWS experience required.")
+        updated = ai.apply_ai_evaluation(result, {"career_direction_score": 0.2, "career_direction_reason": "title inflation"})
+        assert updated.career_direction_fit.score == 0.2
+        assert "title inflation" in updated.career_direction_fit.reason
+
+    def test_ai_still_replaces_the_keyword_fallback(self):
+        # No evidence index -> keyword fallback -> prior behavior preserved.
+        job = _job("Forward deployed solutions architect role.")
+        result = score_job(job, CareerProfile.load(), Preferences.load(), use_ai=False)
+        updated = ai.apply_ai_evaluation(result, {"career_direction_score": 0.42, "career_direction_reason": "ai"})
+        assert updated.career_direction_fit.score == 0.42

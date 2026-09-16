@@ -25,6 +25,9 @@ profiles:
   wordpress:
     enabled: true
     queries: [WordPress]
+  backend_platform:
+    enabled: true
+    queries: ["Backend Engineer", "Platform Engineer", "API Integration"]
   fde:
     enabled: true
     queries: ["Forward Deployed", "Solutions Architect", "Applied AI", ...]
@@ -37,6 +40,30 @@ Each profile is one or more independent keyword queries — a job matching
 matching all of them. `career/search_profiles.py::SearchProfilesConfig`
 loads this; `jobs discover --profile <name>` (repeatable) runs a specific
 subset, overriding a profile's own `enabled: false` if named explicitly.
+
+### Two transition paths (Phase 4.1)
+
+Discovery deliberately covers two different kinds of good opportunity,
+and neither is required to look like the other:
+
+- **Path A — stack-adjacent.** Roles where the existing stack (PHP,
+  Laravel, Craft CMS, WordPress, backend/API work, AWS) is the bridge,
+  ideally with architecture/systems/AI/integration responsibility on top.
+  Found by the `php`/`laravel`/`craft`/`wordpress` profiles and, since
+  Phase 4.1, `backend_platform` — which catches backend/platform/
+  integration roles that never name those technologies.
+- **Path B — target direction.** Forward Deployed Engineer, Solutions
+  Architect, Applied AI, ML Systems, Customer Engineer roles, found by
+  `fde`. These don't need to mention PHP at all.
+
+Neither path is a scoring rule by itself — both are just search
+coverage. What decides whether a discovered role is worth an email is the
+same decision pipeline for both: remote compatibility (eligibility),
+qualification against real evidence, and `career_direction_fit`, which
+since Phase 4.1 is grounded in matched candidate evidence rather than
+title keywords (docs/scoring.md#career-direction-fit). A Path B title with
+no real evidence overlap scores low; a Path A role with real architecture
+evidence scores well without any FDE/AI wording.
 
 ### Employment-type policy
 
@@ -90,7 +117,7 @@ normalization, deduplication, or scoring. Options:
 | Flag | Effect |
 |---|---|
 | `--profile` (repeatable) | Limit to specific profile(s); default all enabled |
-| `--source` | `creative-circle` or `greenhouse`; default both |
+| `--source` | `creative-circle`, `greenhouse`, `ashby`, `lever`, or `workable`; default all |
 | `--remote` | Remote-only |
 | `--employment-type` (repeatable) | Override the profile config's default allowlist |
 | `--min-fit` | Only show `overall_fit >=` this |

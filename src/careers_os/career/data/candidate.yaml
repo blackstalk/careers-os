@@ -23,10 +23,21 @@ work_authorization:
 # distinct from career/data/preferences.yaml's work_arrangement scoring
 # penalties (which just make remote score higher, never treat onsite as
 # impossible).
+#
+# hybrid/onsite are "unacceptable" (Phase 4.1 production correction, was
+# "acceptable"/"acceptable") because the candidate's actual current
+# search is remote-only — the earlier "acceptable" values let hybrid
+# postings clear career/eligibility.py's work-arrangement check as
+# ELIGIBLE, so a strong technical/career-direction score alone was enough
+# to reach strong_pursue regardless of work arrangement. This is a hard
+# eligibility fact, not a scoring tweak: an unacceptable arrangement now
+# makes the job EligibilityStatus.INELIGIBLE, which career/pursue.py
+# already treats as do_not_pursue ahead of any fit score, exactly the
+# same hard-gate machinery every other eligibility constraint uses.
 work_preferences:
   remote: preferred
-  hybrid: acceptable
-  onsite: acceptable
+  hybrid: unacceptable
+  onsite: unacceptable
 
 relocation:
   willing: false

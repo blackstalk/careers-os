@@ -3,7 +3,11 @@ from datetime import datetime, timezone
 from careers_os.career.preferences import Preferences
 from careers_os.career.profile import CareerProfile
 from careers_os.domain.enums import EmploymentType, RemoteStatus
+from careers_os.domain.experience import ExperienceFitDetail
 from careers_os.domain.job import NormalizedJob
+from careers_os.domain.matching import MatchType, RequirementMatch
+from careers_os.domain.requirements import JobRequirement
+from careers_os.domain.taxonomy import SkillCategory
 from careers_os.scoring import deterministic
 from careers_os.scoring.engine import score_job
 
@@ -39,6 +43,114 @@ class TestRoleFit:
         result = deterministic.score_role_fit(job, profile)
         assert result.score == 0.0
         assert "No target-role" in result.reason
+
+
+def _requirement_match(category: SkillCategory, match_type: MatchType, skill: str = "x") -> RequirementMatch:
+    req = JobRequirement(id=skill, category=category, canonical_skill=skill, text=skill)
+    return RequirementMatch(requirement=req, match_type=match_type, reason="test")
+
+
+class TestCareerDirectionFitEvidenceGrounding:
+    """Phase 4.1 — career_direction_fit must reflect real candidate
+    evidence overlap when available, not just job-text keyword presence,
+    so a target-direction title alone can't override weak evidence. See
+    docs/scoring.md#career-direction-fit.
+    """
+
+    def test_falls_back_to_keyword_heuristic_when_no_experience_detail(self):
+        # No resume imported (experience_detail=None) — must behave
+        # exactly like the pre-Phase-4.1 keyword-only heuristic.
+        profile = CareerProfile.load()
+        job = _job(title="Applied AI Engineer", description="Forward deployed AI engineer role.")
+        result = deterministic.score_career_direction_fit(job, profile, None)
+        assert result.score == deterministic.score_career_direction_fit(job, profile).score
+
+    def test_falls_back_to_keyword_heuristic_when_no_forward_category_matches(self):
+        # A resume was imported, but this specific job's extracted
+        # requirements have nothing in a forward-direction category —
+        # same fallback as the no-resume case.
+        profile = CareerProfile.load()
+        job = _job(title="Applied AI Engineer", description="Forward deployed AI engineer role.")
+        detail = ExperienceFitDetail(
+            requirement_matches=[_requirement_match(SkillCategory.PROGRAMMING_LANGUAGE, MatchType.STRONG_MATCH)]
+        )
+        with_detail = deterministic.score_career_direction_fit(job, profile, detail)
+        without_detail = deterministic.score_career_direction_fit(job, profile, None)
+        assert with_detail.score == without_detail.score
+
+    def test_target_direction_title_with_unsupported_evidence_scores_low(self):
+        # The exact "title similarity overpowering weak evidence" case:
+        # an Applied AI Engineer posting whose forward-direction
+        # requirements the candidate has NO real evidence for must score
+        # low here, regardless of how many AI/FDE buzzwords are in the
+        # text (which would otherwise saturate the old keyword score).
+        profile = CareerProfile.load()
+        job = _job(
+            title="Applied AI Engineer",
+            description="Forward deployed AI engineer building production ML systems, "
+            "solutions architecture, and customer-facing AI implementations.",
+        )
+        detail = ExperienceFitDetail(
+            requirement_matches=[
+                _requirement_match(SkillCategory.AI_ML, MatchType.UNSUPPORTED, "production_ml"),
+                _requirement_match(SkillCategory.ARCHITECTURE, MatchType.UNSUPPORTED, "solution_architecture"),
+            ]
+        )
+        result = deterministic.score_career_direction_fit(job, profile, detail)
+        assert result.score < 0.35
+        assert "real evidence overlap" in result.reason.lower() or "evidence" in result.reason.lower()
+
+    def test_target_direction_title_with_strong_evidence_scores_high(self):
+        # Path B: a target-direction role IS a credible transition when
+        # the candidate has real (non-adjacent) evidence in forward
+        # categories — no PHP/Laravel/Craft/WordPress needed at all.
+        profile = CareerProfile.load()
+        job = _job(
+            title="Applied AI Engineer",
+            description="Forward deployed AI engineer building production ML systems.",
+        )
+        detail = ExperienceFitDetail(
+            requirement_matches=[
+                _requirement_match(SkillCategory.AI_ML, MatchType.STRONG_MATCH, "ai_ml"),
+                _requirement_match(SkillCategory.ARCHITECTURE, MatchType.STRONG_MATCH, "architecture"),
+                _requirement_match(SkillCategory.CLOUD, MatchType.STRONG_MATCH, "aws"),
+            ]
+        )
+        result = deterministic.score_career_direction_fit(job, profile, detail)
+        assert result.score >= 0.9
+
+    def test_stack_adjacent_role_with_no_direction_keywords_still_uses_evidence(self):
+        # Path A: a plain PHP/Laravel posting that also happens to carry
+        # real architecture-category evidence (e.g. it includes system-
+        # design responsibilities) should score on that evidence, not be
+        # dragged to zero just because it lacks FDE/AI terminology.
+        profile = CareerProfile.load()
+        job = _job(
+            title="Senior Laravel Platform Engineer",
+            description="Own our Laravel/PHP platform architecture and API integrations.",
+        )
+        detail = ExperienceFitDetail(
+            requirement_matches=[
+                _requirement_match(SkillCategory.ARCHITECTURE, MatchType.STRONG_MATCH, "architecture"),
+                _requirement_match(SkillCategory.FRAMEWORK, MatchType.STRONG_MATCH, "laravel"),
+            ]
+        )
+        result = deterministic.score_career_direction_fit(job, profile, detail)
+        assert result.score >= 0.9
+
+    def test_provider_and_company_identity_never_affect_the_score(self):
+        # Same evidence, same job content, different source/company —
+        # must score identically. Company prestige has no representation
+        # anywhere in this function's inputs.
+        profile = CareerProfile.load()
+        detail = ExperienceFitDetail(
+            requirement_matches=[_requirement_match(SkillCategory.AI_ML, MatchType.STRONG_MATCH)]
+        )
+        openai_job = _job(source="ashby", title="Applied AI Engineer", description="AI engineering role.")
+        unknown_co_job = _job(source="greenhouse", title="Applied AI Engineer", description="AI engineering role.")
+        result_a = deterministic.score_career_direction_fit(openai_job, profile, detail)
+        result_b = deterministic.score_career_direction_fit(unknown_co_job, profile, detail)
+        assert result_a.score == result_b.score
 
 
 class TestCompensationFit:

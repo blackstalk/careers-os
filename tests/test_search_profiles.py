@@ -7,7 +7,7 @@ from careers_os.domain.enums import EmploymentType
 class TestSearchProfilesConfig:
     def test_loads_default_profiles(self):
         config = SearchProfilesConfig.load()
-        assert set(config.profiles) == {"php", "laravel", "craft", "wordpress", "fde"}
+        assert set(config.profiles) == {"php", "laravel", "craft", "wordpress", "backend_platform", "fde"}
 
     def test_each_profile_has_at_least_one_query(self):
         config = SearchProfilesConfig.load()

@@ -19,12 +19,14 @@ flowchart TD
     GH[Greenhouse] -->|documented Job Board API| GHSource[GreenhouseSource]
     AS[Ashby] -->|documented public Job Postings API| ASSource[AshbySource]
     LV[Lever] -->|public Postings API| LVSource[LeverSource]
+    WK[Workable] -->|public job-widget API| WKSource[WorkableSource]
 
     subgraph Source Adapters
         CCSource
         GHSource
         ASSource
         LVSource
+        WKSource
         LI[LinkedIn adapter — not viable, see docs/source-evaluation.md]
     end
 
@@ -32,6 +34,7 @@ flowchart TD
     GHSource --> Raw
     ASSource --> Raw
     LVSource --> Raw
+    WKSource --> Raw
     LI -. same JobSource contract .-> Raw
 
     Raw --> Norm[source.normalize]
@@ -124,6 +127,8 @@ src/careers_os/
       constants.py, client.py, parser.py, source.py, config.py, boards.yaml
     lever/             fourth adapter — all Lever-specific code lives here only
       constants.py, client.py, parser.py, source.py, config.py, companies.yaml
+    workable/          fifth adapter — all Workable-specific code lives here only
+      constants.py, client.py, parser.py, source.py, config.py, accounts.yaml
 
   career/              what I'm targeting, what I've done, and what I'll accept — config + parsing, not scoring logic
     profile.py, preferences.py, candidate.py    data/profile.yaml, data/preferences.yaml, data/candidate.yaml

@@ -1,0 +1,64 @@
+{
+  "name": "Example AI",
+  "description": "Example company.",
+  "jobs": [
+    {
+      "title": "Senior Laravel Platform Engineer - US Remote",
+      "shortcode": "AAA111",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "url": "https://apply.workable.com/j/AAA111",
+      "shortlink": "https://apply.workable.com/j/AAA111",
+      "published_on": "2026-09-10",
+      "created_at": "2026-09-10",
+      "country": "United States",
+      "city": "New York",
+      "state": "New York",
+      "description": "<p>Own our <strong>Laravel</strong> platform architecture &amp; API integrations. Salary range: $180,000 - $220,000.</p>"
+    },
+    {
+      "title": "Machine Learning Engineer - EMEA Remote",
+      "shortcode": "BBB222",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "url": "https://apply.workable.com/j/BBB222",
+      "published_on": "2026-08-01",
+      "country": "France",
+      "city": "Paris",
+      "state": "Île-de-France",
+      "description": "<p>Build ML systems for open-source models.</p>"
+    },
+    {
+      "title": "Contract Data Analyst",
+      "shortcode": "CCC333",
+      "employment_type": "Contract",
+      "telecommuting": false,
+      "url": "https://apply.workable.com/j/CCC333",
+      "published_on": "2026-01-05",
+      "country": "United States",
+      "city": "Austin",
+      "state": "Texas",
+      "description": "<p>Analyze data for internal stakeholders.</p>"
+    },
+    {
+      "title": "Office Manager",
+      "shortcode": "DDD444",
+      "employment_type": "Full-time",
+      "telecommuting": false,
+      "url": "https://apply.workable.com/j/DDD444",
+      "published_on": "2026-09-13",
+      "country": "United States",
+      "city": "Boston",
+      "state": "Massachusetts",
+      "description": "<p>No compensation mentioned.</p>"
+    },
+    {
+      "title": "Malformed Listing Missing Shortcode",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "url": "https://apply.workable.com/j/EEE555",
+      "published_on": "2026-09-01",
+      "description": "<p>placeholder</p>"
+    }
+  ]
+}

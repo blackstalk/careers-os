@@ -57,6 +57,18 @@ threshold to an unrelated skill mentioned later in the same window. Fixed
 by picking only the single nearest skill mention, not every skill that
 happens to occur in the window.
 
+Phase 4.1 added `"what you need"`/`"what you'll need"` as required-
+section headings (Ashby-hosted postings such as Ramp's use them) and
+fixed two more issues the same class of test exposed: a years threshold
+inside a required section could attach to a skill mentioned in the prose
+*above* the heading (now only skills inside the section are eligible),
+and because "what you need" is common in ordinary prose ("what you need
+to succeed"), those looser headings don't use the fall-back-to-first-
+occurrence rule the original markers do. Measured against all 603
+stored jobs, the combined change (with the new `erp_systems` taxonomy
+entry) moved exactly five Ramp ERP-specialist consultant roles from
+`strong_pursue` to `consider` and changed nothing else.
+
 Both bugs were caught by testing against real job text, not invented —
 see `tests/test_requirements_extraction.py::TestRequirementImportance`.
 

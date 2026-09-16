@@ -32,6 +32,21 @@ profiles:
     queries:
       - WordPress
 
+  # Phase 4.1: the brand-name profiles above only discover roles that
+  # explicitly mention PHP/Laravel/Craft/WordPress by name — this widens
+  # discovery to plain backend/platform/integration roles that are
+  # equally strong stack-adjacent (Path A) matches but never name those
+  # specific technologies. Deliberately excludes generic single-word
+  # terms like "AWS" or "API" alone, which would return enough noise
+  # across every technical posting to defeat the point of a search
+  # profile — see docs/discovery.md.
+  backend_platform:
+    enabled: true
+    queries:
+      - "Backend Engineer"
+      - "Platform Engineer"
+      - "API Integration"
+
   fde:
     enabled: true
     queries:

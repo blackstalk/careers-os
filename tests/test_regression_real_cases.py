@@ -106,6 +106,47 @@ class TestCaseB_StripeTechnicalSolutionsEngineer:
         assert any(c.constraint_type.value == "timezone" for c in result.decision.eligibility.checks)
 
 
+class TestCaseD_HybridAppliedAIEngineer:
+    """The real Phase 4.1 production case: OpenAI/Ramp "Applied AI
+    Engineer"-style hybrid postings with strong technical/qualification
+    signal must NOT become strong_pursue merely because the title/company
+    look like the target direction — work arrangement is a hard
+    eligibility constraint, checked ahead of any fit score, using the
+    real candidate.yaml (work_preferences.hybrid: unacceptable).
+    """
+
+    def test_hybrid_role_is_do_not_pursue_regardless_of_strong_fit(self, evidence_index):
+        job = _job(
+            "Applied AI Engineer, Enterprise",
+            "Own solution architecture and AI-assisted automation systems using AWS, REST API "
+            "integrations, and provide technical leadership and customer-facing delivery for "
+            "enterprise clients.",
+            employment_type=EmploymentType.FULL_TIME,
+            remote_status=RemoteStatus.HYBRID,
+            posted_at=NOW,
+        )
+        result = _evaluate(job, evidence_index)
+        assert result.decision.eligibility.status.value == "ineligible"
+        assert result.decision.pursue.recommendation == PursueRecommendation.DO_NOT_PURSUE
+
+    def test_identical_but_remote_role_is_not_blocked_by_eligibility(self, evidence_index):
+        # Same content, remote instead of hybrid — proves the block above
+        # is specifically about work arrangement, not some other factor
+        # coincidentally present in this posting.
+        job = _job(
+            "Applied AI Engineer, Enterprise",
+            "Own solution architecture and AI-assisted automation systems using AWS, REST API "
+            "integrations, and provide technical leadership and customer-facing delivery for "
+            "enterprise clients.",
+            employment_type=EmploymentType.FULL_TIME,
+            remote_status=RemoteStatus.REMOTE,
+            posted_at=NOW,
+        )
+        result = _evaluate(job, evidence_index)
+        assert result.decision.eligibility.status.value == "eligible"
+        assert result.decision.pursue.recommendation != PursueRecommendation.DO_NOT_PURSUE
+
+
 class TestCaseC_StripeBackendEngineerGo:
     """Discovered via a PHP keyword search, but fundamentally a Go
     engineering position — PHP is only a preferred qualification. Must

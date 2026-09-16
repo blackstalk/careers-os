@@ -2,7 +2,7 @@
 
 A personal AI-assisted job search / career operating system. It discovers
 real jobs from multiple sources (Creative Circle, Greenhouse, Ashby,
-Lever), normalizes
+Lever, Workable), normalizes
 them into a source-agnostic canonical schema, matches them against your
 own imported resume evidence, and — beyond a simple fit score — decides
 whether a job is actually worth pursuing: is it eligible for you, are you
@@ -60,6 +60,7 @@ command jobs search ashby --board openai --query "applied ai"
 command jobs search ashby-all --query "forward deployed engineer"
 command jobs search lever --company palantir --query "forward deployed"
 command jobs search lever-all --query "forward deployed engineer"
+command jobs search workable --account laravel --remote
 ```
 
 Once a resume is imported, every search automatically scores
@@ -103,6 +104,7 @@ command jobs list --status saved
 command jobs health greenhouse --board anthropic
 command jobs health ashby --board openai
 command jobs health lever --board palantir
+command jobs health workable --board huggingface
 command jobs duplicates   # cross-source possible-duplicate flags (never auto-merged)
 command jobs history <source> <source_job_id>   # field-level change log across re-syncs
 ```
@@ -113,5 +115,5 @@ Data persists to `data/careers.db` (SQLite, gitignored).
 
 ```bash
 pytest              # fixture-based, fully offline
-pytest -m live      # optional: hits the real Creative Circle, Greenhouse, Ashby, and Lever APIs
+pytest -m live      # optional: hits the real Creative Circle, Greenhouse, Ashby, Lever, and Workable APIs
 ```

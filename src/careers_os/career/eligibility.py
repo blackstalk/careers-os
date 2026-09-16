@@ -66,6 +66,23 @@ _CLEARANCE_MARKERS = ("security clearance", "must be able to obtain a clearance"
 
 _RELOCATION_MARKERS = ("relocation required", "must relocate", "requires relocation")
 
+# A short, explicit list of countries/regions that commonly appear in a
+# job's own structured `location` field alongside "remote" to scope a
+# remote hire to one country (e.g. Ashby/Lever postings set location to
+# "India - Remote" or "Remote (Germany)") — distinct from the candidate's
+# own country. Deliberately not a general geography parser, just enough
+# to catch this common ATS pattern without guessing at phrasing this
+# project hasn't actually observed. Non-exhaustive by design — see
+# docs/eligibility.md.
+_NON_US_REMOTE_LOCATION_MARKERS = (
+    "india", "canada", "mexico", "brazil", "argentina", "united kingdom", "uk",
+    "ireland", "germany", "france", "spain", "italy", "netherlands", "poland",
+    "portugal", "philippines", "singapore", "japan", "china", "south korea",
+    "australia", "new zealand", "emea", "apac", "latam",
+    "south africa", "denmark", "sweden", "norway", "finland", "switzerland",
+    "austria", "belgium", "israel", "colombia", "chile",
+)
+
 
 def _check_timezone(text: str, candidate: CandidateProfile) -> list[EligibilityCheck]:
     match = _TIMEZONE_PHRASE_RE.search(text)
@@ -113,6 +130,40 @@ def _check_residency(text: str, candidate: CandidateProfile) -> list[Eligibility
             status=status,
             confidence=0.85,
             reason=reason,
+        )
+    ]
+
+
+def _check_remote_location_geography(job: NormalizedJob, candidate: CandidateProfile) -> list[EligibilityCheck]:
+    """A job can be genuinely "remote" while still being scoped to one
+    country via its own structured `location` field rather than the
+    description's prose (`_check_residency` only scans title+description
+    text, never `location`) — e.g. "India - Remote" or "Remote (Germany)".
+    VERIFY, not INELIGIBLE: a location string naming a country is a real
+    but ambiguous signal (the posting could still be open more broadly),
+    same posture as the timezone check.
+    """
+    if job.remote_status != RemoteStatus.REMOTE or not job.location:
+        return []
+    location_lower = job.location.lower()
+    if "remote" not in location_lower:
+        return []
+    matched = next((m for m in _NON_US_REMOTE_LOCATION_MARKERS if m in location_lower), None)
+    if not matched:
+        return []
+    return [
+        EligibilityCheck(
+            requirement=f"Remote role scoped to: {job.location}",
+            constraint_type=ConstraintType.GEOGRAPHIC_RESIDENCY,
+            candidate_evidence=f"{candidate.location.state}, {candidate.location.country}",
+            status=EligibilityStatus.VERIFY,
+            confidence=0.6,
+            reason=(
+                f"Job's own location field ('{job.location}') suggests this remote role may be "
+                f"scoped to a specific country/region rather than open to candidates in "
+                f"{candidate.location.country} — verify with the employer rather than assuming "
+                "either interpretation."
+            ),
         )
     ]
 
@@ -202,6 +253,28 @@ def _check_relocation(text: str, candidate: CandidateProfile) -> list[Eligibilit
 
 
 def _check_work_arrangement(job: NormalizedJob, candidate: CandidateProfile) -> list[EligibilityCheck]:
+    prefs = candidate.work_preferences
+    remote_only = prefs.hybrid == "unacceptable" and prefs.onsite == "unacceptable"
+    if job.remote_status == RemoteStatus.UNKNOWN:
+        if not remote_only:
+            return []
+        # A remote-only candidate can't treat "arrangement not stated" as
+        # compatible — that's an open question to confirm, not a pass and
+        # not a rejection.
+        return [
+            EligibilityCheck(
+                requirement="Work arrangement not stated",
+                constraint_type=ConstraintType.WORK_ARRANGEMENT,
+                candidate_evidence="remote only (hybrid/onsite unacceptable)",
+                status=EligibilityStatus.VERIFY,
+                confidence=0.5,
+                reason=(
+                    "The posting doesn't state whether the role is remote; candidate only accepts "
+                    "remote work — confirm the arrangement before pursuing."
+                ),
+            )
+        ]
+
     if job.remote_status == RemoteStatus.ONSITE:
         level = candidate.work_preferences.onsite
     elif job.remote_status == RemoteStatus.HYBRID:
@@ -246,5 +319,6 @@ def evaluate_eligibility(job: NormalizedJob, candidate: CandidateProfile) -> Eli
     checks += _check_security_clearance(text, candidate)
     checks += _check_relocation(text, candidate)
     checks += _check_work_arrangement(job, candidate)
+    checks += _check_remote_location_geography(job, candidate)
 
     return EligibilityResult(status=rollup_status(checks), checks=checks)

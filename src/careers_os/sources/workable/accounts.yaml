@@ -1,0 +1,16 @@
+# Workable account slugs to search by default. A slug is the token in
+# https://apply.workable.com/api/v1/widget/accounts/<slug>.
+#
+# Chosen for the two transition paths in docs/discovery.md, not volume:
+#   laravel, tighten, 10up — stack-adjacent (Laravel / WordPress companies)
+#   huggingface            — target-direction (applied AI / ML systems)
+# tighten and 10up had Workable accounts with zero open roles when this
+# was written — one cheap request each, kept in case they post.
+#
+# `jobs search workable --account <slug>` works for any valid slug
+# without listing it here first.
+accounts:
+  - laravel
+  - huggingface
+  - tighten
+  - 10up

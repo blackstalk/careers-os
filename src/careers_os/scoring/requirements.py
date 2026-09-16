@@ -34,6 +34,12 @@ _HARD_SECTION_MARKERS = (
     "minimum qualifications",
     "required qualifications",
     "basic qualifications",
+    # Ashby-hosted postings (e.g. Ramp) commonly head their required list
+    # "WHAT YOU NEED". A skill there still only becomes HARD_REQUIRED when
+    # an explicit "N+ years" threshold attaches to it.
+    "what you need",
+    "what you'll need",
+    "what you’ll need",
 )
 
 _YEARS_PATTERN = re.compile(r"(\d+)\+?\s*(?:years?|yrs?)\b", re.IGNORECASE)
@@ -46,7 +52,7 @@ _CONTEXT_WINDOW = 60
 # boilerplate) — a heading is followed directly by content, prose is
 # followed by a linking verb. Skip occurrences that look like prose.
 _PROSE_CONTINUATION_WORDS = frozenset(
-    {"are", "is", "were", "was", "will", "would", "should", "must", "the", "that", "which", "listed", "section"}
+    {"are", "is", "were", "was", "will", "would", "should", "must", "the", "that", "which", "listed", "section", "to"}
 )
 
 
@@ -68,7 +74,13 @@ def _section_start(text_lower: str, markers: tuple[str, ...]) -> Optional[int]:
         first_word = after.split(" ", 1)[0].strip(".,:") if after else ""
         if first_word not in _PROSE_CONTINUATION_WORDS:
             return pos
-    return candidates[0][0]  # nothing looked heading-like; fall back to the first occurrence
+    # Nothing looked heading-like. The original markers keep the historical
+    # fall-back-to-first-occurrence behavior; the looser "what you need"
+    # phrasings are common in ordinary prose, so they don't.
+    for pos, marker in candidates:
+        if not marker.startswith("what you"):
+            return pos
+    return None
 
 
 def _preferred_section_start(text_lower: str) -> Optional[int]:
@@ -134,6 +146,11 @@ def extract_requirements(
             for alias in definition.aliases:
                 alias_pos = context_lower.find(alias.lower())
                 if alias_pos == -1:
+                    continue
+                # A threshold inside the required section belongs to a
+                # skill named inside that section, never to one mentioned
+                # in the prose just above the heading.
+                if years_in_hard_section and start + alias_pos < hard_start:
                     continue
                 distance = abs((start + alias_pos) - match.start())
                 if nearest_distance is None or distance < nearest_distance:
