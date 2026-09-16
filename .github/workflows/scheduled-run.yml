@@ -5,11 +5,16 @@ name: Scheduled Careers OS run
 # launchd approach) is asleep or offline. See
 # docs/alerts.md#scheduling.
 #
-# State (data/careers.db — including alert dedup history) is committed
-# back to the repo at the end of every run, since GitHub-hosted runners
-# start from a clean checkout each time and nothing else here persists
-# between runs. This is why `contents: write` permission and a
-# repo-scoped git identity are needed below.
+# State (data/careers.db — including alert dedup history) is restored
+# from and saved back to the GitHub Actions cache each run, since
+# hosted runners start from a clean checkout every time and nothing else
+# here persists between runs. The database is deliberately NOT committed
+# to the repo (see .gitignore) — an earlier version of this workflow did
+# that and it worked until the database's own natural growth pushed it
+# past GitHub's 100MB per-file push limit and hard-blocked every run
+# after. The cache has no comparable per-file limit (10GB per repo).
+# `JobRepository.prune_history` still keeps the database itself from
+# growing without bound regardless.
 
 "on":
   schedule:
@@ -25,9 +30,6 @@ concurrency:
   group: scheduled-careers-os-run
   cancel-in-progress: false # never cancel a run that's already sending/persisting
 
-permissions:
-  contents: write
-
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -41,6 +43,36 @@ jobs:
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
+
+      # actions/cache entries are immutable per key — restore the most
+      # recent one via the `restore-keys` prefix (there is no cache
+      # entry with this run's own id yet), then always save under a
+      # fresh, run-id-unique key below so this run's changes are never
+      # lost to that immutability. Old entries age out on their own via
+      # GitHub's normal cache eviction; nothing here deletes them
+      # explicitly.
+      - name: Restore job database
+        uses: actions/cache/restore@v4
+        with:
+          path: data/careers.db
+          key: careers-os-db-${{ github.run_id }}
+          restore-keys: |
+            careers-os-db-
+
+      # Only reached the very first run ever, or if the cache is ever
+      # fully evicted (GitHub ages out unused entries) — data/
+      # careers.seed.db is a committed, manually-refreshed snapshot
+      # (resume/evidence data + alert history at the time it was taken)
+      # so a cache miss starts from a real, qualification-capable
+      # database rather than an empty one with no resume evidence at
+      # all. It intentionally goes stale between refreshes; that's an
+      # acceptable, bounded tradeoff against starting over from nothing.
+      - name: Seed job database if no cache was found
+        run: |
+          if [ ! -f data/careers.db ]; then
+            echo "No cached database found — seeding from data/careers.seed.db"
+            cp data/careers.seed.db data/careers.db
+          fi
 
       - name: Run scheduled discovery + alerts
         env:
@@ -64,14 +96,8 @@ jobs:
         # workaround exists for locally.
         run: python -m careers_os.cli run
 
-      - name: Persist job database state
-        run: |
-          git config user.name "careers-os-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add data/careers.db
-          if git diff --cached --quiet; then
-            echo "No database changes to commit."
-          else
-            git commit -m "chore: update job database from scheduled run [skip ci]"
-            git push
-          fi
+      - name: Save job database
+        uses: actions/cache/save@v4
+        with:
+          path: data/careers.db
+          key: careers-os-db-${{ github.run_id }}

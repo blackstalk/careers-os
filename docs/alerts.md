@@ -324,13 +324,41 @@ regardless of your machine's state.
 
 **State persistence**: GitHub-hosted runners start from a clean checkout
 every run — nothing survives between runs by default. Since alert dedup
-(`NotificationRecord`) lives in `data/careers.db`, the workflow's final
-step commits that file back to the repo (`chore: update job database
-from scheduled run [skip ci]`) whenever it changed, so the next run picks
-up exactly where the last one left off. `data/careers.db` is deliberately
-**not** git-ignored (see `.gitignore`'s `!data/careers.db` exception) for
-this reason; only its transient `-journal`/`-wal`/`-shm` SQLite files
-still are.
+(`NotificationRecord`) lives in `data/careers.db`, the workflow restores
+it from the GitHub Actions cache at the start of each run and saves it
+back at the end (`actions/cache/restore` + `actions/cache/save`, keyed
+`careers-os-db-<run id>` with a `careers-os-db-` restore-keys prefix so
+each run always restores the most recent entry despite cache keys being
+immutable once written).
+
+An earlier version of this workflow committed `data/careers.db` to the
+repo instead. That worked until the database's own natural growth (see
+below) pushed a single commit past GitHub's **100MB per-file push
+limit**, which hard-blocked every subsequent run — not just slow or
+wasteful, an outright failure to persist state at all. The cache has no
+comparable per-file limit (10GB per repo), which is why it's used now;
+`data/careers.db` is git-ignored again as a result.
+
+If the cache is ever fully evicted (GitHub ages out old/unused entries)
+a run would otherwise start from an empty database with no resume
+evidence at all — every job would score `qualification=unknown` and
+nothing would ever reach `strong_pursue`. `data/careers.seed.db` is a
+small, deliberately committed, manually-refreshed snapshot the workflow
+falls back to only on a cache miss, so that failure mode starts from a
+real (if possibly stale) database instead of nothing. Refresh it
+occasionally with `cp data/careers.db data/careers.seed.db` after
+pruning (see below) if you want the fallback to stay reasonably current.
+
+**Unbounded growth**: `JobRepository.prune_history()` (called at the end
+of every `run_scheduled_pipeline`, local or scheduled) collapses the
+`raw_jobs`/`job_scores` tables down to one row per job. Both tables
+otherwise get a new row every time a job is *touched* by a search, not
+just when first discovered — a single job matching several different
+search-profile queries in the same run multiplies fast. In production
+this reached ~2,300 rows (~19MB) in one run before pruning existed; it's
+what caused the 100MB failure above. `jobs`, `job_evaluations`, and
+`notifications` are never pruned — they carry state (human review,
+evaluation history, alert dedup) that must never be collapsed.
 
 **AI evaluation**: the workflow passes `ANTHROPIC_API_KEY` through as a
 repo secret, so scheduled runs use the same optional AI evidence-
@@ -354,13 +382,6 @@ for var in SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM SMTP_USE_TL
   gh secret set "$var" --body "$value"
 done
 ```
-
-**Repo size caveat**: `data/careers.db` grows over time (raw job
-payloads, descriptions, evaluations, notification history) and gets
-committed as a new binary blob each run — SQLite files don't delta well
-in git. Fine to start with; worth revisiting (e.g. periodic pruning of
-old `raw_jobs`, or migrating to GitHub Actions cache / an external store)
-if the repo grows uncomfortably large.
 
 **Running both this and local `launchd` at once will cause duplicate
 alerts** — the two would each hold their own divergent copy of the dedup

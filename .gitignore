@@ -14,6 +14,6 @@ data/*.sqlite3
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
-!data/careers.db
+!data/careers.seed.db
 .DS_Store
 logs/
