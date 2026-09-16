@@ -307,13 +307,63 @@ any partial credential state.
 
 ## Scheduling
 
-No cloud infrastructure is introduced for this. `jobs run` is a plain,
-idempotent CLI invocation, so any conventional OS scheduler works;
-**macOS `launchd`** is recommended for a personal Mac setup over cron
-because it can run at login/wake in addition to a fixed calendar time and
-is the standard mechanism for this on macOS. See
-`scripts/com.careersos.scheduledrun.plist.example` for a template that
-runs `jobs run` once each weekday morning.
+`jobs run` is a plain, idempotent CLI invocation — moving where it's
+invoked from never requires touching `ingestion/scheduled_run.py`, the
+alert policy, or the email channel. Two mechanisms exist:
+
+### GitHub Actions (primary, recommended)
+
+`.github/workflows/scheduled-run.yml` runs `jobs run --no-ai` on GitHub's
+hosted infrastructure weekdays at 13:00 UTC (8:00am US Central during
+Daylight Time — GitHub Actions cron doesn't observe DST, so this drifts
+an hour during Standard Time), plus supports a manual trigger
+(`workflow_dispatch`, or `gh workflow run scheduled-run.yml`). This is
+what actually solves the "my Mac might be asleep" problem the local
+`launchd` approach below has — GitHub's runners are always available
+regardless of your machine's state.
+
+**State persistence**: GitHub-hosted runners start from a clean checkout
+every run — nothing survives between runs by default. Since alert dedup
+(`NotificationRecord`) lives in `data/careers.db`, the workflow's final
+step commits that file back to the repo (`chore: update job database
+from scheduled run [skip ci]`) whenever it changed, so the next run picks
+up exactly where the last one left off. `--no-ai` is explicit in the
+workflow rather than implied by a missing secret — deterministic scoring
+only, no `ANTHROPIC_API_KEY` needed. `data/careers.db` is deliberately
+**not** git-ignored (see `.gitignore`'s `!data/careers.db` exception) for
+this reason; only its transient `-journal`/`-wal`/`-shm` SQLite files
+still are.
+
+**Required repo secrets** (Settings → Secrets and variables → Actions),
+matching `.env.example`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_TLS`, `CAREERS_ALERT_EMAIL`. Set
+these directly in GitHub's UI, or with the `gh` CLI reading from your own
+local `.env` (never pasted through an assistant):
+
+```bash
+for var in SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM SMTP_USE_TLS CAREERS_ALERT_EMAIL; do
+  value=$(grep "^${var}=" .env | cut -d= -f2-)
+  gh secret set "$var" --body "$value"
+done
+```
+
+**Repo size caveat**: `data/careers.db` grows over time (raw job
+payloads, descriptions, evaluations, notification history) and gets
+committed as a new binary blob each run — SQLite files don't delta well
+in git. Fine to start with; worth revisiting (e.g. periodic pruning of
+old `raw_jobs`, or migrating to GitHub Actions cache / an external store)
+if the repo grows uncomfortably large.
+
+**Running both this and local `launchd` at once will cause duplicate
+alerts** — the two would each hold their own divergent copy of the dedup
+state. Pick one as authoritative; see below for disabling `launchd`.
+
+### macOS `launchd` (local alternative / manual testing)
+
+For a personal Mac setup without GitHub Actions, `launchd` is preferred
+over cron because it can run at login/wake in addition to a fixed
+calendar time. See `scripts/com.careersos.scheduledrun.plist.example`
+for a template that runs `jobs run` once each weekday morning.
 
 To install:
 
@@ -325,18 +375,18 @@ cp scripts/com.careersos.scheduledrun.plist.example \
 launchctl load ~/Library/LaunchAgents/com.careersos.scheduledrun.plist
 ```
 
-**Known limitation:** a `launchd` job only runs while the Mac is powered
-on and awake (or wakes it, if `StartCalendarInterval` combined with
-`launchd`'s wake support is configured, which is not guaranteed on
-battery). A run scheduled for a moment the machine is asleep or off is
-skipped, not queued — it simply doesn't happen that day. This is
-acceptable for a personal, passive-mode radar (a missed weekday run is
-not a materially different outcome than the mode's own selectivity
-already produces) but is the reason the pipeline is deliberately
-structured so that moving to an always-on hosted runner (e.g. a small
-scheduled GitHub Actions workflow or a cron on a small VM) later needs
-only a new place to invoke `jobs run` — no change to
-`ingestion/scheduled_run.py`, the alert policy, or the email channel.
+To uninstall (e.g. once GitHub Actions is the authoritative scheduler):
+
+```
+launchctl unload ~/Library/LaunchAgents/com.careersos.scheduledrun.plist
+```
+
+**Known limitation** — the reason GitHub Actions is now recommended
+instead: a `launchd` job only runs while the Mac is powered on and awake
+(or wakes it, if `StartCalendarInterval` combined with `launchd`'s wake
+support is configured, which is not guaranteed on battery). A run
+scheduled for a moment the machine is asleep or off is skipped, not
+queued — it simply doesn't happen that day.
 
 ## Observability
 
