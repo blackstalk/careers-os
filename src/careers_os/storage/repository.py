@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from careers_os.domain.enums import JobStatus
@@ -322,6 +322,40 @@ class JobRepository:
         if status:
             stmt = stmt.where(JobRecord.status == status.value)
         return list(self.session.execute(stmt).scalars().all())
+
+    def prune_history(self) -> dict[str, int]:
+        """Collapse the append-only `raw_jobs`/`job_scores` history down to
+        just the latest row per job.
+
+        Both tables get a brand-new row every time a job is *touched* by a
+        search — not just when a job is first discovered — because a
+        single `jobs run` can match the same job through several different
+        (profile, query, source) combinations (see docs/discovery.md).
+        That was a deliberate Phase 1/2 choice ("a parser bug can be fixed
+        and re-run against `raw_payload` without re-fetching the source"),
+        but nothing ever bounded how much of that history accumulates —
+        in production this reached ~2,300 raw_jobs/job_scores rows (~19MB)
+        in a single scheduled run, which is what pushed data/careers.db
+        past GitHub's 100MB hard push limit. This keeps only the most
+        recently retrieved/computed row per job — always enough to
+        re-parse or re-inspect the current snapshot, never an unbounded
+        history — and reclaims the freed space with `VACUUM`. Never
+        touches `jobs`, `job_evaluations`, or `notifications`, which don't
+        exhibit this multiplication and carry state (dedup, human review)
+        that must never be collapsed.
+        """
+        raw_deleted = self.session.execute(
+            text(
+                "DELETE FROM raw_jobs WHERE id NOT IN "
+                "(SELECT MAX(id) FROM raw_jobs GROUP BY source, source_job_id)"
+            )
+        ).rowcount
+        scores_deleted = self.session.execute(
+            text("DELETE FROM job_scores WHERE id NOT IN (SELECT MAX(id) FROM job_scores GROUP BY job_id)")
+        ).rowcount
+        self.session.commit()
+        self.session.execute(text("VACUUM"))
+        return {"raw_jobs_deleted": raw_deleted, "job_scores_deleted": scores_deleted}
 
     def commit(self) -> None:
         self.session.commit()

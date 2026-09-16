@@ -269,6 +269,16 @@ def run_scheduled_pipeline(
         )
 
     repository.commit()
+
+    # Collapse this run's (and any prior runs') redundant raw_jobs/
+    # job_scores history down to one row per job — see
+    # JobRepository.prune_history for why this accumulates so fast.
+    # Independent of dry_run: this cleans up discovery/scoring side
+    # effects that already happen regardless of dry_run (see
+    # run_discovery), never touches notification/alert state.
+    prune_stats = repository.prune_history()
+    logger.info("scheduled_run.pruned_history", extra=prune_stats)
+
     result.completed_at = datetime.now(timezone.utc)
     logger.info(
         "scheduled_run.completed",
