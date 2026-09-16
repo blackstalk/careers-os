@@ -51,10 +51,12 @@ jobs:
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
           CAREERS_ALERT_EMAIL: ${{ secrets.CAREERS_ALERT_EMAIL }}
-        # Deterministic scoring only — no ANTHROPIC_API_KEY secret is
-        # configured for this workflow, so --no-ai makes that an explicit
-        # choice rather than an implicit side effect of a missing secret.
-        run: jobs run --no-ai
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # AI evidence-reasoning layer enabled (ANTHROPIC_API_KEY secret
+        # configured) — see docs/pursue-recommendation.md's AI guardrails
+        # section for what it can/can't do; deterministic scoring/
+        # qualification/pursue logic is unaffected either way.
+        run: jobs run
 
       - name: Persist job database state
         run: |

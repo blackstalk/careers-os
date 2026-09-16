@@ -313,7 +313,7 @@ alert policy, or the email channel. Two mechanisms exist:
 
 ### GitHub Actions (primary, recommended)
 
-`.github/workflows/scheduled-run.yml` runs `jobs run --no-ai` on GitHub's
+`.github/workflows/scheduled-run.yml` runs `jobs run` on GitHub's
 hosted infrastructure weekdays at 13:00 UTC (8:00am US Central during
 Daylight Time — GitHub Actions cron doesn't observe DST, so this drifts
 an hour during Standard Time), plus supports a manual trigger
@@ -327,21 +327,29 @@ every run — nothing survives between runs by default. Since alert dedup
 (`NotificationRecord`) lives in `data/careers.db`, the workflow's final
 step commits that file back to the repo (`chore: update job database
 from scheduled run [skip ci]`) whenever it changed, so the next run picks
-up exactly where the last one left off. `--no-ai` is explicit in the
-workflow rather than implied by a missing secret — deterministic scoring
-only, no `ANTHROPIC_API_KEY` needed. `data/careers.db` is deliberately
+up exactly where the last one left off. `data/careers.db` is deliberately
 **not** git-ignored (see `.gitignore`'s `!data/careers.db` exception) for
 this reason; only its transient `-journal`/`-wal`/`-shm` SQLite files
 still are.
 
+**AI evaluation**: the workflow passes `ANTHROPIC_API_KEY` through as a
+repo secret, so scheduled runs use the same optional AI evidence-
+reasoning layer (docs/pursue-recommendation.md) as a local run with that
+key set — deterministic scoring/qualification/pursue logic is identical
+either way; the key only affects the narrow set of ambiguous-evidence
+gaps that layer is allowed to touch. Omitting the secret (or passing
+`jobs run --no-ai` instead) falls back to fully deterministic scoring
+with no behavior change beyond skipping that optional reasoning step.
+
 **Required repo secrets** (Settings → Secrets and variables → Actions),
 matching `.env.example`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
-`SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_TLS`, `CAREERS_ALERT_EMAIL`. Set
-these directly in GitHub's UI, or with the `gh` CLI reading from your own
-local `.env` (never pasted through an assistant):
+`SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_TLS`, `CAREERS_ALERT_EMAIL`, and
+optionally `ANTHROPIC_API_KEY`. Set these directly in GitHub's UI, or
+with the `gh` CLI reading from your own local `.env` (never pasted
+through an assistant):
 
 ```bash
-for var in SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM SMTP_USE_TLS CAREERS_ALERT_EMAIL; do
+for var in SMTP_HOST SMTP_PORT SMTP_USERNAME SMTP_PASSWORD SMTP_FROM SMTP_USE_TLS CAREERS_ALERT_EMAIL ANTHROPIC_API_KEY; do
   value=$(grep "^${var}=" .env | cut -d= -f2-)
   gh secret set "$var" --body "$value"
 done
