@@ -56,7 +56,13 @@ jobs:
         # configured) — see docs/pursue-recommendation.md's AI guardrails
         # section for what it can/can't do; deterministic scoring/
         # qualification/pursue logic is unaffected either way.
-        run: jobs run
+        #
+        # Invoked as a module, not the `jobs` console script — bash's own
+        # `jobs` builtin (lists background jobs) intercepts a bare `jobs
+        # run` before PATH resolution ever sees the installed script, the
+        # same builtin-name collision the README's `command jobs run`
+        # workaround exists for locally.
+        run: python -m careers_os.cli run
 
       - name: Persist job database state
         run: |
