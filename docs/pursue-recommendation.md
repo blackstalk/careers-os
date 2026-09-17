@@ -194,6 +194,94 @@ Every recommendation carries `reason` (one sentence) and
 `contributing_factors` (the raw inputs that fed the decision) — never a
 bare label.
 
+## Work-style fit (Phase 4.2)
+
+A role can be eligible, well qualified, and pointed in the right career
+direction while its *day-to-day shape* is still wrong for the candidate.
+The motivating case was a remote Ramp "Technical Consultant, Commercial"
+posting: APIs, integrations, system design, and technical discovery all
+matched, but the job is described as being "on the frontlines" with
+customers, acting as a liaison, partnering with Account Management,
+representing Product/Engineering externally, and guiding customers
+"without writing code directly." The work product is meetings and
+communication, not building.
+
+`career/work_style.py::classify_work_style` answers "what does a normal
+day in this role consist of?" from the posting's own description. It
+never looks at the title or company, so a Solutions Architect posting can
+come out build-heavy at one company and customer-heavy at another.
+
+### How evidence is extracted
+
+1. **Role section only.** Text is read from the first role heading
+   ("about the role", "what you'll do", "responsibilities", ...) up to the
+   first benefits/EEO heading. Company marketing ("everyone is a
+   builder") and perks don't count.
+2. **Distinct activity phrases, three groups**, each reported verbatim on
+   `WorkStyleResult`:
+   - *build*: "write production code", "design and ship", "prototype",
+     "build integrations", "deploy", "debug", "owning services", "on-call", ...
+   - *customer / meeting*: "on the frontlines", "liaison", "discovery
+     calls", "demos", "pre-sales", "account management", "executive
+     relationships", "externally", ...
+   - *coordination / communication*: "coordinate", "facilitate",
+     "presentations", "project management", "follow-up communication",
+     "manage dependencies", ...
+   Phrases describe what the person does. Bare "customer-facing" is
+   deliberately excluded because postings use it for the product being
+   built.
+3. **Explicit no-code statements** ("without writing code directly",
+   "non-coding role") are recorded separately and rule out a build-leaning
+   classification. The list is narrow on purpose: "... without writing
+   code" alone often describes what a product lets its users do.
+4. **Weak collaboration phrases** ("cross-functional", "roadmap",
+   "influence", "relationship", "go-to-market", ...) appear in plenty of
+   hands-on engineering postings, so they count half toward
+   customer/coordination weight and can't make a role meeting-heavy on
+   their own.
+
+### Classification rules
+
+With `b` build phrases, `people` = strong customer + coordination phrases
++ half of the weak ones:
+
+| Style | Rule |
+|---|---|
+| `unknown` | fewer than 3 signals in total, description under 200 characters, or no group clearly dominates |
+| `build_heavy` | no no-code statement, `b ≥ 3`, and `b ≥ people` |
+| `balanced` | no no-code statement, `b ≥ 3`, and `2·b ≥ people` — real customer time alongside real building (a hands-on FDE) |
+| `customer_heavy` / `coordination_heavy` | a no-code statement, or at least 2 strong people phrases and `people > b`; the larger strong group decides which |
+
+### Effect on the pursue recommendation
+
+`preferences.yaml` lists disfavored styles (`work_style.disfavored`,
+currently `customer_heavy` and `coordination_heavy`). In
+`career/pursue.py` the check runs after every hard gate (ineligible,
+failed qualification, verify-first) and after high opportunity cost, and
+before the normal weighing. A disfavored style caps the result at
+`consider`, whatever the technical match, compensation, or title. It is a
+downgrade, not a rejection: the role stays visible in `jobs discover` and
+`jobs evaluate`, with the evidence listed under WORK STYLE, but it never
+reaches the email threshold in either operating mode. `balanced` and
+`build_heavy` roles are unaffected; balanced roles that do get emailed
+carry a watchout listing the customer-time phrases found.
+
+Measured against the 607 postings stored at the time: of the plain
+individual-contributor engineering titles, 94 came out build-heavy, 10
+balanced, 95 unknown, and 4 customer-heavy (Anthropic's enterprise
+Applied AI Engineer, which is a pre-sales role, and a Stripe integration
+liaison role).
+
+### Known limitations
+
+- Phrase lists are approximate English matching, not understanding.
+  "Partner with Customer Activation" (an internal team) matches the
+  customer phrase "partner with customer".
+- About 40% of postings come out `unknown`, usually short or unstructured
+  descriptions. `unknown` never changes a recommendation.
+- The optional AI layer does not refine work style; the deterministic
+  result is the only source.
+
 ## Regression cases (real jobs, live-discovered)
 
 All three verified end-to-end through the actual CLI
@@ -215,7 +303,7 @@ eligibility, qualification, and opportunity cost from raw fit.
 ## Evaluation versioning and persistence
 
 `domain/opportunity_decision.py::EVALUATION_VERSION` (currently
-`"opportunity-decision-v1"`) is stamped on every stored
+`"opportunity-decision-v2"`, bumped in Phase 4.2 when work style was added) is stamped on every stored
 `JobEvaluationRecord` (`storage/db.py`, append-only like
 `JobScoreRecord`) — `jobs evaluate` persists a new row each time it's
 run, so a job's recommendation history is inspectable over time, and it's

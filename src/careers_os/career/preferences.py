@@ -2,10 +2,10 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from careers_os.domain.enums import OperatingMode
-from careers_os.domain.opportunity_decision import PursueRecommendation
+from careers_os.domain.opportunity_decision import PursueRecommendation, WorkStyle
 
 DEFAULT_PREFERENCES_PATH = Path(__file__).parent / "data" / "preferences.yaml"
 
@@ -100,6 +100,15 @@ class AlertPolicy(BaseModel):
         return self.passive if mode == OperatingMode.PASSIVE else self.active
 
 
+class WorkStylePreferences(BaseModel):
+    """Day-to-day role shapes the candidate wants to move away from — see
+    docs/pursue-recommendation.md#work-style-fit. A disfavored style caps
+    the pursue recommendation at `consider`; it never makes a role
+    ineligible."""
+
+    disfavored: list[WorkStyle] = Field(default_factory=list)
+
+
 class Preferences(BaseModel):
     compensation: CompensationPreferences
     work_arrangement: WorkArrangementPreferences
@@ -108,6 +117,7 @@ class Preferences(BaseModel):
     freshness_thresholds: Optional[FreshnessThresholds] = None
     operating_mode: OperatingMode = OperatingMode.PASSIVE
     alert_policy: Optional[AlertPolicy] = None
+    work_style: WorkStylePreferences = Field(default_factory=WorkStylePreferences)
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "Preferences":

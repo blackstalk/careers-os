@@ -1,0 +1,18 @@
+About the role
+
+As a Forward Deployed Engineer you will work directly with customers to understand their hardest technical problems, then design, build, and deploy the software that solves them. This is a hands-on engineering role: most of your week is spent writing production code in the customer's environment.
+
+What you'll do
+
+ - Meet with customers and lead technical discovery to understand their data, systems, and constraints
+ - Write production code in Python and TypeScript to build integrations between our platform and customer data sources
+ - Prototype solutions quickly, then harden them into production systems you own
+ - Deploy and operate what you build inside customer cloud environments
+ - Debug issues across customer infrastructure, networking, and data pipelines
+ - Own the implementation end-to-end, from first call to a system running in production
+ - Share what you learn with our product and engineering teams
+
+What you bring
+
+ - Strong software engineering fundamentals and experience owning services in production
+ - Comfort working with customers when the problem is ambiguous

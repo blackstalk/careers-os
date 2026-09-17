@@ -1,0 +1,29 @@
+About the company
+
+We build developer tools and APIs that power authentication and identity for fast-growing software companies. Our customer base includes hundreds of companies building enterprise-ready products.
+
+ABOUT THE ROLE
+
+As an Applied AI Engineer, you'll design and ship production AI systems that change how the company builds, sells, supports, and scales. You'll also be building things that customers use, and systems that the entire company depends on daily.
+
+You'll work on a small, high-ownership team that moves from idea to prototype to production in days or weeks and ships both internal leverage and customer-facing product. This is a 0 to 1 role with company-wide visibility.
+
+What you'll do
+
+ - Design and ship customer-facing AI products like a docs assistant and AI support bots embedded in customer Slack channels
+ - Build internal tools that become part of people's daily work: agents, automations, and workflows that are stable, observable, and easy to maintain
+ - Work on big bets: a unified bot framework, a sandboxed coding harness agent, and infrastructure that lets the entire company ship
+ - Use LLMs, embeddings, retrieval, and tool-calling to plug into docs, Slack, GitHub, CRM, analytics, and internal services
+ - A GTM intelligence layer that gives reps live account context, meeting prep, and follow-up from CRM and product usage
+
+What we're looking for
+
+ - You've taken AI-powered systems from idea to production and through at least one iteration cycle with real users
+ - Strong engineering fundamentals. You're comfortable owning services, data flows, and integrations end-to-end
+ - You think about failure modes, observability, and ownership, not just whether the demo works
+ - Experience building with LLM APIs; exposure to MCP is a plus
+
+Benefits and Perks
+
+ - Fully remote working arrangements
+ - Unlimited token usage

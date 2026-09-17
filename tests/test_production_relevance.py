@@ -189,6 +189,10 @@ class TestProductionWorkflowInvocation:
         assert "careers.seed.db" in text
         assert "git push" not in text
 
+    def test_workflow_timeout_leaves_headroom_for_full_runs(self):
+        workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/scheduled-run.yml").read_text())
+        assert workflow["jobs"]["run"]["timeout-minutes"] >= 30
+
     def test_cli_module_is_executable(self):
         source = (REPO_ROOT / "src/careers_os/cli.py").read_text()
         assert 'if __name__ == "__main__":' in source

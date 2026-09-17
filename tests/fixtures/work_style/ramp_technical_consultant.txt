@@ -1,0 +1,29 @@
+ABOUT RAMP
+
+We automate how businesses spend. At Ramp, everyone is a builder who owns problems end to end. If you want to build systems that directly shape how companies move and manage billions, Ramp is the place to do it.
+
+ABOUT THE ROLE
+
+Technical Consultants are on the frontlines working to establish partnerships with Ramp customers, and act as a liaison between customers and our internal technical teams. You'll be partnering with Customer Activation & Account Management teams to identify, prioritize and build financial solutions for new and existing customers.
+
+You will act as the technical and financial subject matter expert for our customers, and design solutions that address the customer's needs through Ramp and partner integrations. You will define the customer's financial & technical success criteria from onboarding through activation and expansion. You will represent Product, Design and Engineering externally. The role requires technical skills necessary to understand and educate on robust accounting features.
+
+WHAT YOU'LL DO
+
+ - Act as a technical advisor to customers and internal teams while supporting high-value implementations and expansion opportunities by guiding integration, configuration, and system design
+ - Partner with Customer Activation and Account Management teams to assess customer requirements and propose scalable solutions involving ERP, HRIS, and API integrations
+ - Collaborate with onboarding specialists and implementation leads to support technical workstreams (not run them)
+ - Participate in technical discovery to understand customer systems and workflows, and recommend best-fit architecture, including when and how to use the API
+ - Troubleshoot integration blockers and guide customers through complex configuration decisions without writing code directly
+ - Influence the product roadmap by channeling customer pain points and feedback to Product and Engineering
+
+WHAT YOU NEED
+
+ - 2+ years in technical consulting, solutions engineering, implementation, or a similar customer-facing technical role
+ - Comfort working with APIs, integration logic, and system architecture and being able to explain those concepts to finance and operations stakeholders
+ - Collaborative mindset and ability to work cross-functionally with Sales, Customer Success, Product, and Engineering
+
+BENEFITS
+
+ - Budget for intra-office travel
+ - In-office perks: lunch, snacks, drinks

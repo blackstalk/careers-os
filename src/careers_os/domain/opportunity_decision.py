@@ -37,6 +37,27 @@ class ScopeResult(BaseModel):
     reason: str
 
 
+class WorkStyle(str, Enum):
+    """The day-to-day shape of a role, judged from its own description —
+    see career/work_style.py and docs/pursue-recommendation.md#work-style-fit.
+    Independent of title: the same title can be any of these."""
+
+    BUILD_HEAVY = "build_heavy"
+    BALANCED = "balanced"
+    CUSTOMER_HEAVY = "customer_heavy"
+    COORDINATION_HEAVY = "coordination_heavy"
+    UNKNOWN = "unknown"
+
+
+class WorkStyleResult(BaseModel):
+    style: WorkStyle
+    reason: str
+    build_signals: list[str] = Field(default_factory=list)
+    customer_signals: list[str] = Field(default_factory=list)
+    coordination_signals: list[str] = Field(default_factory=list)
+    no_code_signals: list[str] = Field(default_factory=list)
+
+
 class Freshness(str, Enum):
     FRESH = "fresh"
     RECENT = "recent"
@@ -66,7 +87,7 @@ class PursueResult(BaseModel):
     contributing_factors: list[str] = Field(default_factory=list)
 
 
-EVALUATION_VERSION = "opportunity-decision-v1"
+EVALUATION_VERSION = "opportunity-decision-v2"
 
 
 class OpportunityDecision(BaseModel):
@@ -83,3 +104,6 @@ class OpportunityDecision(BaseModel):
     scope: ScopeResult
     freshness: FreshnessResult
     pursue: PursueResult
+    work_style: WorkStyleResult = Field(
+        default_factory=lambda: WorkStyleResult(style=WorkStyle.UNKNOWN, reason="Not assessed.")
+    )

@@ -314,7 +314,7 @@ alert policy, or the email channel. Two mechanisms exist:
 ### GitHub Actions (primary, recommended)
 
 `.github/workflows/scheduled-run.yml` runs `jobs run` on GitHub's
-hosted infrastructure weekdays at 13:00 UTC (8:00am US Central during
+hosted infrastructure weekdays at 13:17 UTC (8:17am US Central during
 Daylight Time — GitHub Actions cron doesn't observe DST, so this drifts
 an hour during Standard Time), plus supports a manual trigger
 (`workflow_dispatch`, or `gh workflow run scheduled-run.yml`). This is

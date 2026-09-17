@@ -280,6 +280,7 @@ class JobEvaluationRecord(Base):
     pursue_recommendation: Mapped[str] = mapped_column(String)
     pursue_reason: Mapped[str] = mapped_column(String)
     pursue_factors: Mapped[list] = mapped_column(JSON, default=list)
+    work_style: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
 
 class NotificationRecord(Base):
@@ -326,6 +327,11 @@ def _apply_lightweight_migrations(engine: Engine) -> None:
                 conn.execute(
                     text("ALTER TABLE jobs ADD COLUMN discovered_by_profiles JSON DEFAULT '[]'")
                 )
+    if "job_evaluations" in inspector.get_table_names():
+        existing = {c["name"] for c in inspector.get_columns("job_evaluations")}
+        if "work_style" not in existing:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE job_evaluations ADD COLUMN work_style JSON"))
 
 
 def get_engine(db_path: Optional[Path] = None) -> Engine:

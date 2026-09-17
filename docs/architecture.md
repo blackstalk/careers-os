@@ -143,6 +143,7 @@ src/careers_os/
     eligibility.py         deterministic hard-constraint evaluation (timezone, auth, clearance, ...)
     opportunity_cost.py    high/moderate/low/unknown opportunity-cost classification
     scope.py               execution/ownership/architecture/... scope classification
+    work_style.py          build-heavy / balanced / customer-heavy / coordination-heavy role-shape classification
     freshness.py           fresh/recent/aging/stale posting-age classification
     pursue.py              final pursue recommendation — hard gates dominate
 

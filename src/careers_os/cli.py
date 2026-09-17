@@ -497,7 +497,8 @@ def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
     console.print(f"   Overall Fit: {opp.fit.overall_fit * 100:.0f}%  |  "
                   f"Immediate Opportunity: {opp.immediate.level.value}  |  "
                   f"Career Bridge: {opp.bridge.classification.value}  |  "
-                  f"Opportunity Cost: {decision.opportunity_cost.level.value}")
+                  f"Opportunity Cost: {decision.opportunity_cost.level.value}  |  "
+                  f"Work Style: {decision.work_style.style.value}")
 
     detail = opp.fit.experience_detail
     if detail is not None and detail.strong_matches:
@@ -1119,6 +1120,19 @@ def _print_evaluation_report(job_record, result) -> None:
 
     console.print("[bold]OPPORTUNITY COST[/bold]")
     console.print(f"{decision.opportunity_cost.level.value}: {decision.opportunity_cost.reason}\n")
+
+    ws = decision.work_style
+    console.print("[bold]WORK STYLE[/bold]")
+    console.print(f"{ws.style.value}: {ws.reason}")
+    for label, signals in (
+        ("Hands-on building", ws.build_signals),
+        ("Customer / meeting", ws.customer_signals),
+        ("Coordination / communication", ws.coordination_signals),
+        ("Explicitly limits coding", ws.no_code_signals),
+    ):
+        if signals:
+            console.print(f"  {label}: {', '.join(signals)}")
+    console.print()
 
     if detail is not None:
         rec = recommend_resume_variant(detail)

@@ -224,6 +224,7 @@ class JobRepository:
             pursue_recommendation=decision.pursue.recommendation.value,
             pursue_reason=decision.pursue.reason,
             pursue_factors=decision.pursue.contributing_factors,
+            work_style=decision.work_style.model_dump(mode="json"),
         )
         self.session.add(record)
         self.session.flush()

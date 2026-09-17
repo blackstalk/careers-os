@@ -47,6 +47,11 @@ profiles:
       - "Platform Engineer"
       - "API Integration"
 
+  # Phase 4.2: consultant/presales-style titles (Solutions Engineer,
+  # Customer Engineer) stay in on purpose — the same title can be hands-on
+  # or meeting-heavy, and career/work_style.py judges that from the
+  # description. "AI Engineer" and "Systems Engineer" widen coverage of the
+  # build-heavy roles this search is now centered on.
   fde:
     enabled: true
     queries:
@@ -54,9 +59,11 @@ profiles:
       - "Solutions Architect"
       - "Solutions Engineer"
       - "Applied AI"
+      - "AI Engineer"
       - "ML Systems"
       - "Machine Learning Platform"
       - "AI Platform"
+      - "Systems Engineer"
       - "Customer Engineer"
 
 # Employment types considered in scope for discovery's default filter.

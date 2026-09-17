@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from careers_os.career.bridge_role import BridgeClassification
 from careers_os.career.opportunity_value import OpportunityLevel
 from careers_os.domain.matching import GapType
-from careers_os.domain.opportunity_decision import Freshness, OpportunityCostLevel, ScopeDimension
+from careers_os.domain.opportunity_decision import Freshness, OpportunityCostLevel, ScopeDimension, WorkStyle
 from careers_os.domain.qualification import QualificationStatus
 from careers_os.ingestion.evaluation import EvaluationResult
 
@@ -38,6 +38,7 @@ class AlertContent:
     qualification: str
     career_direction: str
     opportunity_value: str
+    work_style: str = "unknown"
 
     reasons: list[str] = field(default_factory=list)
     watchouts: list[str] = field(default_factory=list)
@@ -66,6 +67,7 @@ class AlertContent:
             f"Qualification: {self.qualification}",
             f"Career direction: {self.career_direction}",
             f"Opportunity value: {self.opportunity_value}",
+            f"Work style: {self.work_style.replace('_', ' ')}",
             "",
             "Why this was surfaced:",
         ]
@@ -140,6 +142,12 @@ def _build_watchouts(result: EvaluationResult) -> list[str]:
             "architecture/ownership."
         )
 
+    ws = decision.work_style
+    if ws.style == WorkStyle.BALANCED and ws.customer_signals:
+        watchouts.append(
+            f"Real customer/meeting time alongside the building work: {', '.join(ws.customer_signals[:4])}."
+        )
+
     if decision.freshness.level == Freshness.STALE:
         watchouts.append(f"Posting is stale: {decision.freshness.reason}")
 
@@ -170,6 +178,7 @@ def build_alert_content(
         qualification=result.decision.qualification.status.value,
         career_direction=result.direction.level.value,
         opportunity_value=result.immediate.level.value,
+        work_style=result.decision.work_style.style.value,
         reasons=_build_reasons(result),
         watchouts=_build_watchouts(result),
         related_variant_count=related_variant_count,

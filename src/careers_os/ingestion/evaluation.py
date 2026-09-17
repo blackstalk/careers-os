@@ -27,6 +27,7 @@ from careers_os.career.preferences import Preferences
 from careers_os.career.pursue import compute_pursue_recommendation
 from careers_os.career.scope import classify_scope
 from careers_os.career.skills import SkillsTaxonomy
+from careers_os.career.work_style import classify_work_style
 from careers_os.domain.job import NormalizedJob
 from careers_os.domain.opportunity_decision import OpportunityDecision
 from careers_os.domain.qualification import QualificationResult, QualificationStatus
@@ -80,7 +81,12 @@ def evaluate_opportunity(
     opportunity_cost = assess_opportunity_cost(qualification, fit.compensation_fit, direction)
     scope = classify_scope(job.title, job.description, taxonomy)
     freshness = assess_freshness(job.posted_at, preferences.freshness_thresholds)
-    pursue = compute_pursue_recommendation(eligibility, qualification, immediate, direction, opportunity_cost)
+    work_style = classify_work_style(job.description)
+    pursue = compute_pursue_recommendation(
+        eligibility, qualification, immediate, direction, opportunity_cost,
+        work_style=work_style,
+        disfavored_work_styles=set(preferences.work_style.disfavored),
+    )
 
     decision = OpportunityDecision(
         eligibility=eligibility,
@@ -89,5 +95,6 @@ def evaluate_opportunity(
         scope=scope,
         freshness=freshness,
         pursue=pursue,
+        work_style=work_style,
     )
     return EvaluationResult(decision=decision, fit=fit, bridge=bridge, immediate=immediate, direction=direction)

@@ -15,6 +15,8 @@ from careers_os.domain.opportunity_decision import (
     OpportunityCostResult,
     PursueRecommendation,
     PursueResult,
+    WorkStyle,
+    WorkStyleResult,
 )
 from careers_os.domain.qualification import QualificationResult, QualificationStatus
 
@@ -25,6 +27,8 @@ def compute_pursue_recommendation(
     immediate: OpportunityAssessment,
     direction: OpportunityAssessment,
     opportunity_cost: OpportunityCostResult,
+    work_style: WorkStyleResult | None = None,
+    disfavored_work_styles: frozenset[WorkStyle] | set[WorkStyle] = frozenset(),
 ) -> PursueResult:
     factors: list[str] = []
 
@@ -56,11 +60,26 @@ def compute_pursue_recommendation(
     factors.append(f"career_direction={direction.level.value}")
     factors.append(f"immediate_opportunity={immediate.level.value}")
     factors.append(f"opportunity_cost={opportunity_cost.level.value}")
+    if work_style is not None:
+        factors.append(f"work_style={work_style.style.value}")
 
     if opportunity_cost.level == OpportunityCostLevel.HIGH:
         return PursueResult(
             recommendation=PursueRecommendation.LOW_PRIORITY,
             reason=opportunity_cost.reason,
+            contributing_factors=factors,
+        )
+
+    # Work-style fit (Phase 4.2): a disfavored day-to-day shape caps the
+    # recommendation below pursue no matter how strong the technical match,
+    # compensation, or title — but it is a downgrade, not a rejection.
+    if work_style is not None and work_style.style in disfavored_work_styles:
+        return PursueResult(
+            recommendation=PursueRecommendation.CONSIDER,
+            reason=(
+                f"Technically relevant, but the role's day-to-day shape is {work_style.style.value.replace('_', ' ')}, "
+                "which the candidate is moving away from."
+            ),
             contributing_factors=factors,
         )
 

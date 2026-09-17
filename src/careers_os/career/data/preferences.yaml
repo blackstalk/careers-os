@@ -77,3 +77,14 @@ alert_policy:
   active:
     minimum_pursue: pursue
     max_alerts_per_run: 5
+
+# Phase 4.2: day-to-day role shapes to move away from, judged from each
+# posting's own description (career/work_style.py), never from its title.
+# A role classified as one of these is capped at `consider` — still
+# visible in `jobs discover`, never emailed. `balanced` roles (real
+# customer contact alongside hands-on building, e.g. a genuinely hands-on
+# FDE) are not affected. Remove entries here to turn the cap off.
+work_style:
+  disfavored:
+    - customer_heavy
+    - coordination_heavy

@@ -18,12 +18,12 @@ name: Scheduled Careers OS run
 
 "on":
   schedule:
-    # 13:00 UTC = 8:00am US Central (Daylight Time). GitHub Actions cron
-    # does not observe DST, so this drifts to 7:00am Central during
-    # Standard Time (roughly early Nov - early Mar) — a known, accepted
-    # limitation, same spirit as the local launchd plist's own documented
-    # tradeoffs.
-    - cron: "0 13 * * 1-5"
+    # 13:17 UTC = 8:17am US Central (Daylight Time). GitHub Actions cron
+    # does not observe DST, so this drifts to 7:17am Central during
+    # Standard Time (roughly early Nov - early Mar). Minute 17, not :00:
+    # GitHub runs scheduled jobs best-effort and top-of-the-hour slots are
+    # the most likely to be delayed or dropped (the first :00 run never fired).
+    - cron: "17 13 * * 1-5"
   workflow_dispatch: {} # allows a manual run from the Actions tab or `gh workflow run`
 
 concurrency:
@@ -33,7 +33,10 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Full runs with AI review took ~13.5 min in production (Phase 4.1) and
+    # each added search query adds time; a timeout would lose the run's
+    # database changes because the cache save step never runs.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
