@@ -58,6 +58,28 @@ class WorkStyleResult(BaseModel):
     no_code_signals: list[str] = Field(default_factory=list)
 
 
+class CareerTrack(str, Enum):
+    """Which of the candidate's two paths a job is on — see
+    career/career_track.py."""
+
+    STACK_ADJACENT = "stack_adjacent"
+    CAREER_DIRECTION = "career_direction"
+    NONE = "none"
+
+
+class TrackAlignment(str, Enum):
+    ALIGNED = "aligned"      # on-track title backed by matched experience
+    UNCLEAR = "unclear"      # neutral title, or on-track title without the evidence
+    OFF_TRACK = "off_track"  # the title defines an unrelated role
+
+
+class CareerTrackResult(BaseModel):
+    track: CareerTrack
+    alignment: TrackAlignment
+    reason: str
+    evidence: list[str] = Field(default_factory=list)
+
+
 class Freshness(str, Enum):
     FRESH = "fresh"
     RECENT = "recent"
@@ -87,7 +109,7 @@ class PursueResult(BaseModel):
     contributing_factors: list[str] = Field(default_factory=list)
 
 
-EVALUATION_VERSION = "opportunity-decision-v2"
+EVALUATION_VERSION = "opportunity-decision-v3"
 
 
 class OpportunityDecision(BaseModel):
@@ -106,4 +128,9 @@ class OpportunityDecision(BaseModel):
     pursue: PursueResult
     work_style: WorkStyleResult = Field(
         default_factory=lambda: WorkStyleResult(style=WorkStyle.UNKNOWN, reason="Not assessed.")
+    )
+    career_track: CareerTrackResult = Field(
+        default_factory=lambda: CareerTrackResult(
+            track=CareerTrack.NONE, alignment=TrackAlignment.UNCLEAR, reason="Not assessed."
+        )
     )

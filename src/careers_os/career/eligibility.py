@@ -62,7 +62,15 @@ _WORK_AUTH_MARKERS = (
 )
 _SPONSORSHIP_NEEDED_MARKERS = ("require sponsorship", "requires sponsorship", "need sponsorship")
 
-_CLEARANCE_MARKERS = ("security clearance", "must be able to obtain a clearance", "active clearance")
+_CLEARANCE_MARKERS = (
+    "security clearance", "must be able to obtain a clearance", "active clearance",
+    # Government-contractor phrasings seen on aggregator postings (Phase 4.3).
+    "clearance required", "secret clearance", "ts/sci", "top secret",
+    # Bare "public trust" also appears in ordinary prose ("when public trust
+    # is at risk"), so only the clearance phrasings count.
+    "dhs public trust", "public trust clearance", "public trust background", "maintain a public trust",
+    "cac eligibility", "clearance and access",
+)
 
 _RELOCATION_MARKERS = ("relocation required", "must relocate", "requires relocation")
 
@@ -78,10 +86,21 @@ _NON_US_REMOTE_LOCATION_MARKERS = (
     "india", "canada", "mexico", "brazil", "argentina", "united kingdom", "uk",
     "ireland", "germany", "france", "spain", "italy", "netherlands", "poland",
     "portugal", "philippines", "singapore", "japan", "china", "south korea",
-    "australia", "new zealand", "emea", "apac", "latam",
+    "australia", "new zealand", "emea", "apac", "latam", "korea", "taiwan", "vietnam",
     "south africa", "denmark", "sweden", "norway", "finland", "switzerland",
     "austria", "belgium", "israel", "colombia", "chile",
+    # Regions and hub cities that remote postings on remote-first ATS
+    # boards use instead of a country ("EU | Remote", "Berlin Office",
+    # "Sydney, Australia", "Remote - Europe" in the title).
+    "europe", "eu", "anz", "dach", "nordics", "benelux",
+    "london", "berlin", "munich", "paris", "amsterdam", "dublin", "zurich",
+    "sydney", "melbourne", "toronto", "vancouver", "montreal", "bangalore",
+    "bengaluru", "tokyo", "tel aviv", "sao paulo", "são paulo",
 )
+_NON_US_REMOTE_LOCATION_RE = re.compile(
+    r"\b(" + "|".join(re.escape(m) for m in _NON_US_REMOTE_LOCATION_MARKERS) + r")\b"
+)
+_US_MARKER_RE = re.compile(r"\bunited states\b|\b(us|usa)\b|\bu\.s\.")
 
 
 def _check_timezone(text: str, candidate: CandidateProfile) -> list[EligibilityCheck]:
@@ -143,23 +162,29 @@ def _check_remote_location_geography(job: NormalizedJob, candidate: CandidatePro
     but ambiguous signal (the posting could still be open more broadly),
     same posture as the timezone check.
     """
-    if job.remote_status != RemoteStatus.REMOTE or not job.location:
+    if job.remote_status != RemoteStatus.REMOTE:
         return []
-    location_lower = job.location.lower()
-    if "remote" not in location_lower:
+    # Checked whether or not the location says "remote": remote-flagged
+    # ATS postings often carry just a hub city or region ("Sydney,
+    # Australia", "EU | Remote"), and the title often carries the region
+    # ("Sr AI Engineer | Remote - Europe").
+    scope = f"{job.location or ''} | {job.title or ''}".lower()
+    # A multi-country restriction that explicitly includes the US is open
+    # to a US-based candidate, even if other listed countries aren't.
+    if _US_MARKER_RE.search(scope):
         return []
-    matched = next((m for m in _NON_US_REMOTE_LOCATION_MARKERS if m in location_lower), None)
-    if not matched:
+    match = _NON_US_REMOTE_LOCATION_RE.search(scope)
+    if not match:
         return []
     return [
         EligibilityCheck(
-            requirement=f"Remote role scoped to: {job.location}",
+            requirement=f"Remote role scoped to: {match.group(0)} ({job.location or job.title})",
             constraint_type=ConstraintType.GEOGRAPHIC_RESIDENCY,
             candidate_evidence=f"{candidate.location.state}, {candidate.location.country}",
             status=EligibilityStatus.VERIFY,
             confidence=0.6,
             reason=(
-                f"Job's own location field ('{job.location}') suggests this remote role may be "
+                f"The job's location/title ('{job.location or ''}' / '{job.title}') suggests this remote role may be "
                 f"scoped to a specific country/region rather than open to candidates in "
                 f"{candidate.location.country} — verify with the employer rather than assuming "
                 "either interpretation."

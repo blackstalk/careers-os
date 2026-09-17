@@ -109,6 +109,15 @@ class WorkStylePreferences(BaseModel):
     disfavored: list[WorkStyle] = Field(default_factory=list)
 
 
+class AIRefinementSettings(BaseModel):
+    """Budget for the optional Claude review of finalists (Phase 4.3) —
+    see docs/scoring.md#bounded-ai-refinement. Only *new* API calls count;
+    a job whose content hasn't changed since its last review reuses the
+    stored result for free. 0 turns new calls off entirely."""
+
+    max_refinements_per_run: int = Field(default=15, ge=0)
+
+
 class Preferences(BaseModel):
     compensation: CompensationPreferences
     work_arrangement: WorkArrangementPreferences
@@ -118,6 +127,7 @@ class Preferences(BaseModel):
     operating_mode: OperatingMode = OperatingMode.PASSIVE
     alert_policy: Optional[AlertPolicy] = None
     work_style: WorkStylePreferences = Field(default_factory=WorkStylePreferences)
+    ai_refinement: AIRefinementSettings = Field(default_factory=AIRefinementSettings)
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "Preferences":

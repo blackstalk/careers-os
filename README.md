@@ -2,7 +2,7 @@
 
 A personal AI-assisted job search / career operating system. It discovers
 real jobs from multiple sources (Creative Circle, Greenhouse, Ashby,
-Lever, Workable), normalizes
+Lever, Workable, Himalayas), normalizes
 them into a source-agnostic canonical schema, matches them against your
 own imported resume evidence, and — beyond a simple fit score — decides
 whether a job is actually worth pursuing: is it eligible for you, are you
@@ -26,13 +26,14 @@ discovered about each source's backend.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev]"      # add ,ai for the optional Claude review: ".[dev,ai]"
 ```
 
-Optional: copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY` to
-enable the optional AI semantic evaluation layer (scoring works fully
-without it — deterministic scoring, including `experience_fit`, never
-requires an API key).
+Optional: copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY` (and
+install the `ai` extra) to let Claude review the top finalists of `jobs
+run`/`jobs discover`, capped by `ai_refinement.max_refinements_per_run`
+in preferences.yaml (docs/scoring.md#bounded-ai-refinement). Scoring works
+fully without it; `jobs search ...` only uses AI with `--ai`.
 
 `jobs`/`careers` are zsh/bash builtin-adjacent names — if your shell
 swallows the command, prefix it with `command`.
@@ -61,6 +62,7 @@ command jobs search ashby-all --query "forward deployed engineer"
 command jobs search lever --company palantir --query "forward deployed"
 command jobs search lever-all --query "forward deployed engineer"
 command jobs search workable --account laravel --remote
+command jobs search himalayas --query "applied ai engineer"
 ```
 
 Once a resume is imported, every search automatically scores
@@ -105,6 +107,8 @@ command jobs health greenhouse --board anthropic
 command jobs health ashby --board openai
 command jobs health lever --board palantir
 command jobs health workable --board huggingface
+command jobs health himalayas
+command jobs applied <posting-url>   # never alert on it again; commit applications.yaml
 command jobs duplicates   # cross-source possible-duplicate flags (never auto-merged)
 command jobs history <source> <source_job_id>   # field-level change log across re-syncs
 ```
@@ -115,5 +119,5 @@ Data persists to `data/careers.db` (SQLite, gitignored).
 
 ```bash
 pytest              # fixture-based, fully offline
-pytest -m live      # optional: hits the real Creative Circle, Greenhouse, Ashby, Lever, and Workable APIs
+pytest -m live      # optional: hits the real Creative Circle, Greenhouse, Ashby, Lever, Workable, and Himalayas APIs
 ```

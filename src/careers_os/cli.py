@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from careers_os.career.applications import APPLICATION_STATUSES, ApplicationEntry, ApplicationLog, normalize_url
 from careers_os.career.preferences import Preferences
 from careers_os.career.resume_import import import_resume_docx
 from careers_os.career.resume_recommendation import recommend_resume_variant
@@ -29,6 +30,7 @@ from careers_os.sources.base import JobSource, SourceHealth
 from careers_os.sources.creative_circle.source import CreativeCircleSource
 from careers_os.sources.greenhouse.config import GreenhouseBoardsConfig
 from careers_os.sources.greenhouse.source import GreenhouseSource
+from careers_os.sources.himalayas.source import HimalayasSource
 from careers_os.sources.lever.config import LeverCompaniesConfig
 from careers_os.sources.lever.source import LeverSource
 from careers_os.sources.workable.config import WorkableAccountsConfig
@@ -54,6 +56,11 @@ console = Console()
 
 careers_app = typer.Typer(help="Manage your resume/experience/evidence data.")
 
+
+# `jobs search ...` scores every result it prints, so AI there is one
+# Claude call per job; it's opt-in (Phase 4.3). `discover`/`run` review
+# only finalists, within preferences.ai_refinement.
+_SEARCH_AI_HELP = "Opt in to a Claude review of every result (one API call per job; needs ANTHROPIC_API_KEY)."
 
 def _repository() -> JobRepository:
     engine = get_engine()
@@ -152,9 +159,7 @@ def search_creative_circle(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results to fetch (server page size)."),
     score: bool = typer.Option(True, "--score/--no-score", help="Compute career-fit scores."),
-    ai: bool = typer.Option(
-        True, "--ai/--no-ai", help="Use AI evaluation if ANTHROPIC_API_KEY is set."
-    ),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search Creative Circle and ingest/normalize/score real results.
 
@@ -190,7 +195,7 @@ def search_greenhouse(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results per page."),
     score: bool = typer.Option(True, "--score/--no-score"),
-    ai: bool = typer.Option(True, "--ai/--no-ai"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search one Greenhouse board and ingest/normalize/score real results.
 
@@ -227,7 +232,7 @@ def search_greenhouse_all(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results per board."),
     score: bool = typer.Option(True, "--score/--no-score"),
-    ai: bool = typer.Option(True, "--ai/--no-ai"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search every board configured in sources/greenhouse/boards.yaml.
 
@@ -275,7 +280,7 @@ def search_ashby(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results per page."),
     score: bool = typer.Option(True, "--score/--no-score"),
-    ai: bool = typer.Option(True, "--ai/--no-ai"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search one Ashby job board and ingest/normalize/score real results.
 
@@ -312,7 +317,7 @@ def search_ashby_all(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results per board."),
     score: bool = typer.Option(True, "--score/--no-score"),
-    ai: bool = typer.Option(True, "--ai/--no-ai"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search every board configured in sources/ashby/boards.yaml.
 
@@ -360,7 +365,7 @@ def search_lever(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results per page."),
     score: bool = typer.Option(True, "--score/--no-score"),
-    ai: bool = typer.Option(True, "--ai/--no-ai"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search one Lever company board and ingest/normalize/score real results.
 
@@ -397,7 +402,7 @@ def search_lever_all(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results per company."),
     score: bool = typer.Option(True, "--score/--no-score"),
-    ai: bool = typer.Option(True, "--ai/--no-ai"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search every company configured in sources/lever/companies.yaml.
 
@@ -443,7 +448,7 @@ def search_workable(
     sort: SortOrder = typer.Option(SortOrder.RELEVANCE, "--sort"),
     limit: int = typer.Option(20, "--limit", help="Max results per page."),
     score: bool = typer.Option(True, "--score/--no-score"),
-    ai: bool = typer.Option(True, "--ai/--no-ai"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
 ) -> None:
     """Search one Workable account and ingest/normalize/score real results.
 
@@ -466,7 +471,32 @@ def search_workable(
     _print_results_table(result.ranked_jobs)
 
 
-_SOURCE_CHOICES = ("creative-circle", "greenhouse", "ashby", "lever", "workable")
+@search_app.command("himalayas")
+def search_himalayas(
+    query: str = typer.Option(..., "--query", help="Keyword search (server-side)."),
+    days: Optional[int] = typer.Option(None, "--days", help="Posted within N days."),
+    employment_type: Optional[EmploymentType] = typer.Option(None, "--employment-type"),
+    limit: int = typer.Option(40, "--limit"),
+    score: bool = typer.Option(True, "--score/--no-score"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help=_SEARCH_AI_HELP),
+) -> None:
+    """Search Himalayas (remote jobs open to US applicants) and ingest results.
+
+    Example:
+        jobs search himalayas --query "applied ai engineer"
+    """
+    search_query = _build_query(query, None, True, days, employment_type, SortOrder.DATE, limit)
+    repo = _repository()
+    with HimalayasSource() as source:
+        result = run_search_ingestion(
+            source, search_query, repo, score=score, use_ai=ai, evidence_index=_evidence_index()
+        )
+        health = source.health()
+    _print_health_line("Himalayas", health, result.jobs_discovered, result.jobs_new, result.jobs_updated, result.parser_errors)
+    _print_results_table(result.ranked_jobs)
+
+
+_SOURCE_CHOICES = ("creative-circle", "greenhouse", "ashby", "lever", "workable", "himalayas")
 
 
 _PURSUE_COLOR = {
@@ -498,7 +528,8 @@ def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
                   f"Immediate Opportunity: {opp.immediate.level.value}  |  "
                   f"Career Bridge: {opp.bridge.classification.value}  |  "
                   f"Opportunity Cost: {decision.opportunity_cost.level.value}  |  "
-                  f"Work Style: {decision.work_style.style.value}")
+                  f"Work Style: {decision.work_style.style.value}  |  "
+                  f"Career Track: {decision.career_track.alignment.value}")
 
     detail = opp.fit.experience_detail
     if detail is not None and detail.strong_matches:
@@ -528,13 +559,14 @@ def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
     console.print()
 
 
+
 @app.command("discover")
 def discover(
     profile: list[str] = typer.Option(
         None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
     ),
     source: Optional[str] = typer.Option(
-        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', 'lever', or 'workable'. Default: all."
+        None, "--source", help="Limit to one of: creative-circle, greenhouse, ashby, lever, workable, himalayas. Default: all."
     ),
     remote: bool = typer.Option(False, "--remote", help="Remote-only."),
     employment_type: list[EmploymentType] = typer.Option(
@@ -546,7 +578,10 @@ def discover(
         None, "--min-fit", help="Only show opportunities with overall_fit >= this (0.0-1.0)."
     ),
     limit: int = typer.Option(20, "--limit", help="Max opportunities to display."),
-    ai: bool = typer.Option(True, "--ai/--no-ai", help="Use AI evaluation if ANTHROPIC_API_KEY is set."),
+    ai: bool = typer.Option(
+        True, "--ai/--no-ai",
+        help="Claude-review the top finalists (within ai_refinement.max_refinements_per_run) if ANTHROPIC_API_KEY is set.",
+    ),
 ) -> None:
     """Search every enabled discovery profile across available sources,
     rank the results, and show the strongest opportunities.
@@ -592,6 +627,8 @@ def discover(
     if source in (None, "workable"):
         for account in WorkableAccountsConfig.load().accounts:
             sources.append(("workable", WorkableSource(account)))
+    if source in (None, "himalayas"):
+        sources.append(("himalayas", HimalayasSource()))
 
     console.print("[bold]CAREER OS — DISCOVERY[/bold]")
     console.print(
@@ -623,6 +660,7 @@ def discover(
     if m.pursue_counts:
         counts = ", ".join(f"{k}={v}" for k, v in sorted(m.pursue_counts.items()))
         console.print(f"Pursue breakdown: {counts}")
+    _print_ai_refinement(result.ai_refinement)
     for note in result.notes:
         console.print(f"[yellow]note:[/yellow] {note}")
     console.print()
@@ -641,7 +679,42 @@ _ALERT_OUTCOME_LABEL = {
     "suppressed_duplicate": "[yellow]- suppressed (already alerted)[/yellow]",
     "dry_run": "[cyan]would send[/cyan]",
     "deferred": "[dim]- deferred (alert budget)[/dim]",
+    "already_applied": "[dim]- skipped (already applied)[/dim]",
+    "superseded": "[dim]- skipped (employer posting found; aggregator copy)[/dim]",
 }
+
+
+def _print_ai_refinement(stats) -> None:
+    if stats is None:
+        return
+    console.print(
+        f"AI review ({stats.status}): {stats.finalists} finalists, {stats.calls}/{stats.budget} new calls, "
+        f"{stats.reused} stored reviews reused, {stats.failures} failed, {stats.over_budget} left deterministic "
+        "(budget reached)"
+    )
+    for change in stats.changed:
+        console.print(f"  [magenta]AI review changed[/magenta] {change}")
+
+
+def _print_source_funnel(sources) -> None:
+    if not sources:
+        return
+    table = Table(title="Discovery by source")
+    for col in ("Source", "Raw", "New", "Unique jobs", "Only here", "Eligible", "Qualified", "Pursue+", "Alert-ready", "Problems"):
+        table.add_column(col)
+    for name in sorted(sources):
+        f = sources[name]
+        problems = []
+        if f.parse_errors:
+            problems.append(f"{f.parse_errors} parse errors")
+        if f.failures:
+            problems.append(f"{len(f.failures)} failed queries ({f.failures[0][:60]})")
+        table.add_row(
+            name, str(f.raw), str(f.new), str(f.unique_jobs), str(f.unique_to_source), str(f.eligible),
+            str(f.qualified), str(f.pursue_or_better), str(f.alert_threshold),
+            "[red]" + "; ".join(problems) + "[/red]" if problems else "-",
+        )
+    console.print(table)
 
 
 @app.command("run")
@@ -650,7 +723,7 @@ def run_scheduled(
         None, "--profile", help="Limit to specific search profile(s) (repeatable). Default: all enabled."
     ),
     source: Optional[str] = typer.Option(
-        None, "--source", help="Limit to 'creative-circle', 'greenhouse', 'ashby', 'lever', or 'workable'. Default: all."
+        None, "--source", help="Limit to one of: creative-circle, greenhouse, ashby, lever, workable, himalayas. Default: all."
     ),
     remote: bool = typer.Option(False, "--remote", help="Remote-only."),
     employment_type: list[EmploymentType] = typer.Option(
@@ -659,7 +732,10 @@ def run_scheduled(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview alerts without sending email or persisting notification state."
     ),
-    ai: bool = typer.Option(True, "--ai/--no-ai", help="Use AI evaluation if ANTHROPIC_API_KEY is set."),
+    ai: bool = typer.Option(
+        True, "--ai/--no-ai",
+        help="Claude-review the top finalists (within ai_refinement.max_refinements_per_run) if ANTHROPIC_API_KEY is set.",
+    ),
 ) -> None:
     """Run the full scheduled pipeline: discover across every enabled
     profile/source, evaluate through the existing decision pipeline, and
@@ -703,6 +779,8 @@ def run_scheduled(
     if source in (None, "workable"):
         for account in WorkableAccountsConfig.load().accounts:
             sources.append(("workable", WorkableSource(account)))
+    if source in (None, "himalayas"):
+        sources.append(("himalayas", HimalayasSource()))
 
     mode_label = f"{preferences.operating_mode.value}{' — DRY RUN' if dry_run else ''}"
     console.print(f"[bold]CAREER OS — SCHEDULED RUN[/bold] (mode: {mode_label})")
@@ -733,16 +811,23 @@ def run_scheduled(
     console.print(f"Jobs evaluated: {m.jobs_evaluated}")
     console.print(f"Eligible: {m.eligible_count}")
     console.print(f"Meeting pursue threshold (pursue/strong_pursue): {m.pursue_threshold_count}")
-    console.print(f"Meeting alert threshold ({preferences.operating_mode.value} mode): {m.alert_threshold_count}")
+    console.print(
+        f"Meeting alert threshold ({preferences.operating_mode.value} mode): {m.alert_threshold_count}"
+        f" (deterministic: {m.deterministic_alert_threshold_count}, before AI review)"
+    )
+    _print_ai_refinement(m.ai_refinement)
     console.print(f"Opportunity clusters/families: {m.opportunity_clusters}")
     console.print(f"Clustered variants (absorbed into a family): {m.clustered_variant_count}")
     console.print(f"Alert budget ({preferences.operating_mode.value} mode): {m.alert_budget}")
     console.print(f"Selected for alert: {m.alerts_selected}")
     console.print(f"Deferred (over budget): {m.alerts_deferred}")
+    console.print(f"Skipped as already applied: {m.applications_suppressed}")
+    console.print(f"Skipped aggregator copies (employer posting found): {m.superseded_by_authoritative}")
     console.print(f"Notifications attempted: {m.notifications_attempted}")
     console.print(f"Notifications sent: {m.notifications_sent}")
     console.print(f"Suppressed as duplicates: {m.notifications_suppressed_duplicate}")
     console.print(f"Failures: {m.failures}")
+    _print_source_funnel(m.sources)
     for note in result.notes:
         console.print(f"[yellow]note:[/yellow] {note}")
 
@@ -793,6 +878,51 @@ def notifications_test() -> None:
     else:
         console.print(f"[red]Test email failed: {result.error}[/red]")
         raise typer.Exit(code=1)
+
+
+@app.command("applied")
+def applied(
+    url: str = typer.Argument(..., help="The job posting URL you applied through."),
+    status: str = typer.Option("applied", "--status", help=f"One of: {', '.join(APPLICATION_STATUSES)}."),
+    company: Optional[str] = typer.Option(None, "--company", help="Needed only if the job isn't in the local database."),
+    title: Optional[str] = typer.Option(None, "--title", help="Needed only if the job isn't in the local database."),
+    note: Optional[str] = typer.Option(None, "--note"),
+) -> None:
+    """Record a job as applied to (or ruled out) so scheduled runs never alert on it.
+
+    Writes career/data/applications.yaml — commit and push it so the
+    GitHub Actions run sees it. Also sets the job's status in the local
+    database when the job is there.
+
+    Example:
+        jobs applied https://jobs.ashbyhq.com/workos/5e650527-...
+        jobs applied https://example.com/job/1 --company Acme --title "Platform Engineer" --status not_interested
+    """
+    import datetime as dt
+
+    if status not in APPLICATION_STATUSES:
+        console.print(f"[red]Unknown status {status!r}[/red] (expected one of: {', '.join(APPLICATION_STATUSES)})")
+        raise typer.Exit(code=1)
+
+    repo = _repository()
+    wanted = normalize_url(url)
+    job = next((j for j in repo.list_jobs(limit=100_000) if j.source_url and normalize_url(j.source_url) == wanted), None)
+    company = company or (job.company if job else None)
+    title = title or (job.title if job else None)
+    if not company or not title:
+        console.print("[red]Job not found locally — pass --company and --title.[/red]")
+        raise typer.Exit(code=1)
+
+    log = ApplicationLog.load()
+    changed = log.add(ApplicationEntry(company=company, title=title, status=status, url=url, date=dt.date.today(), note=note))
+    log.save()
+    if job is not None:
+        local_status = {"not_interested": "rejected", "withdrawn": "closed"}.get(status, status)
+        job.status = JobStatus(local_status).value if local_status in JobStatus._value2member_map_ else job.status
+        repo.commit()
+    verb = "Recorded" if changed else "Already recorded"
+    console.print(f"{verb}: {title} — {company} ({status}).")
+    console.print("Commit and push career/data/applications.yaml so scheduled runs pick it up.")
 
 
 @app.command("list")
@@ -1121,6 +1251,10 @@ def _print_evaluation_report(job_record, result) -> None:
     console.print("[bold]OPPORTUNITY COST[/bold]")
     console.print(f"{decision.opportunity_cost.level.value}: {decision.opportunity_cost.reason}\n")
 
+    ct = decision.career_track
+    console.print("[bold]CAREER TRACK[/bold]")
+    console.print(f"{ct.alignment.value} ({ct.track.value.replace('_', ' ')}): {ct.reason}\n")
+
     ws = decision.work_style
     console.print("[bold]WORK STYLE[/bold]")
     console.print(f"{ws.style.value}: {ws.reason}")
@@ -1232,7 +1366,7 @@ def set_status(source: str, source_job_id: str, status: JobStatus) -> None:
 
 @app.command("health")
 def health(
-    source_name: str = typer.Argument("creative-circle", help="creative-circle, greenhouse, ashby, lever, or workable"),
+    source_name: str = typer.Argument("creative-circle", help="creative-circle, greenhouse, ashby, lever, workable, or himalayas"),
     board: Optional[str] = typer.Option(
         None, "--board", help="Required when source_name is greenhouse, ashby, lever, or workable."
     ),
@@ -1255,6 +1389,8 @@ def health(
             console.print("[red]--board is required for lever (company slug)[/red]")
             raise typer.Exit(code=1)
         source_cm = LeverSource(board)
+    elif source_name == "himalayas":
+        source_cm = HimalayasSource(pages_per_query=1)
     elif source_name == "workable":
         if not board:
             console.print("[red]--board is required for workable (account slug)[/red]")

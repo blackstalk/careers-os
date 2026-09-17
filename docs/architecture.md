@@ -20,6 +20,7 @@ flowchart TD
     AS[Ashby] -->|documented public Job Postings API| ASSource[AshbySource]
     LV[Lever] -->|public Postings API| LVSource[LeverSource]
     WK[Workable] -->|public job-widget API| WKSource[WorkableSource]
+    HM[Himalayas] -->|public remote-jobs search API, aggregator| HMSource[HimalayasSource]
 
     subgraph Source Adapters
         CCSource
@@ -27,6 +28,7 @@ flowchart TD
         ASSource
         LVSource
         WKSource
+        HMSource
         LI[LinkedIn adapter — not viable, see docs/source-evaluation.md]
     end
 
@@ -35,6 +37,7 @@ flowchart TD
     ASSource --> Raw
     LVSource --> Raw
     WKSource --> Raw
+    HMSource --> Raw
     LI -. same JobSource contract .-> Raw
 
     Raw --> Norm[source.normalize]
@@ -129,6 +132,9 @@ src/careers_os/
       constants.py, client.py, parser.py, source.py, config.py, companies.yaml
     workable/          fifth adapter — all Workable-specific code lives here only
       constants.py, client.py, parser.py, source.py, config.py, accounts.yaml
+    himalayas/         sixth adapter, first aggregator with keyword search
+      constants.py, client.py, parser.py, source.py
+    authority.py       which sources are aggregators vs. employer postings
 
   career/              what I'm targeting, what I've done, and what I'll accept — config + parsing, not scoring logic
     profile.py, preferences.py, candidate.py    data/profile.yaml, data/preferences.yaml, data/candidate.yaml
@@ -143,6 +149,8 @@ src/careers_os/
     eligibility.py         deterministic hard-constraint evaluation (timezone, auth, clearance, ...)
     opportunity_cost.py    high/moderate/low/unknown opportunity-cost classification
     scope.py               execution/ownership/architecture/... scope classification
+    applications.py        committed applied/ruled-out list read by scheduled runs
+    career_track.py        stack-adjacent / career-direction track relevance (title identity + matched evidence)
     work_style.py          build-heavy / balanced / customer-heavy / coordination-heavy role-shape classification
     freshness.py           fresh/recent/aging/stale posting-age classification
     pursue.py              final pursue recommendation — hard gates dominate
@@ -153,13 +161,13 @@ src/careers_os/
     evidence_matcher.py   EvidenceIndex + match_requirement + real experience_fit
     evidence_reasoner.py  optional AI evidence reasoner (EvidenceReasoner ABC, Claude default) — guardrailed, cite-or-reject
     qualification.py      hard-required vs. preferred qualification gating
-    ai.py                optional LLM refinement (no-ops without an API key; role_fit/career_direction_fit only)
+    ai.py                optional LLM review of finalists (no-ops without an API key; role_fit/career_direction_fit only)
     engine.py            combines deterministic (+ optional evidence + optional AI) -> CareerFitResult
 
   storage/
     db.py                SQLAlchemy models: jobs, raw_jobs, job_scores, resume_variants,
                           career_roles, role_framings, project_evidence, evidence,
-                          possible_duplicates, job_changes, job_evaluations
+                          possible_duplicates, job_changes, job_evaluations, ai_refinements
     repository.py        JobRepository — dedup + status-preserving upsert + change log + duplicate scan +
                           evaluation persistence; job_record_to_normalized/latest_fit_from_record helpers
     resume_repository.py ResumeRepository — resume/evidence persistence + EvidenceIndex loading
@@ -169,6 +177,8 @@ src/careers_os/
     pipeline.py          search -> normalize -> upsert -> score (with evidence), in one place
     discovery.py          multi-profile, multi-source discovery + ranking + per-opportunity decision
     evaluation.py          orchestrates eligibility + qualification + AI reasoning + cost/scope/freshness -> OpportunityDecision
+    ai_refinement.py       bounded, cached Claude review of finalists (Phase 4.3)
+    scheduled_run.py       `jobs run`: threshold -> applied/superseded removal -> AI review -> clustering -> budget -> send
 
   observability/
     logging.py           structured (JSON-line) logging

@@ -1,0 +1,10 @@
+# Jobs already applied to (or ruled out). Committed on purpose: the
+# scheduled GitHub Actions run never alerts on anything listed here.
+# Add entries with `jobs applied <url>`, then commit and push.
+# See docs/applications.md.
+applications:
+- company: WorkOS
+  title: Applied AI Engineer
+  status: applied
+  url: https://jobs.ashbyhq.com/workos/5e650527-d8dd-413a-9cfb-d7d68143274b
+  date: '2026-09-16'

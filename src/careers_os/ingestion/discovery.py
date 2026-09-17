@@ -8,7 +8,7 @@ it does not reimplement search/normalize/score. See docs/discovery.md.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from careers_os.career.bridge_role import BridgeClassification, BridgeRoleResult, classify_bridge_role
 from careers_os.career.evidence_index import EvidenceIndex
@@ -32,6 +32,9 @@ from careers_os.ingestion.pipeline import run_search_ingestion
 from careers_os.sources.base import JobSource
 from careers_os.storage.db import JobRecord
 from careers_os.storage.repository import JobRepository, job_record_to_normalized
+
+if TYPE_CHECKING:
+    from careers_os.ingestion.ai_refinement import AIRefinementStats
 
 logger = logging.getLogger("careers_os.ingestion.discovery")
 
@@ -59,6 +62,12 @@ class DiscoveryMetrics:
     new_jobs: int = 0
     updated_jobs: int = 0
     pursue_counts: dict[str, int] = field(default_factory=dict)
+    # Per source family (e.g. "greenhouse", "himalayas"): raw results,
+    # new jobs, parse errors, and failed queries with their error text.
+    raw_by_source: dict[str, int] = field(default_factory=dict)
+    new_by_source: dict[str, int] = field(default_factory=dict)
+    parse_errors_by_source: dict[str, int] = field(default_factory=dict)
+    failures_by_source: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -66,6 +75,7 @@ class DiscoveryResult:
     metrics: DiscoveryMetrics = field(default_factory=DiscoveryMetrics)
     opportunities: list[DiscoveryOpportunity] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    ai_refinement: Optional["AIRefinementStats"] = None  # set only when use_ai
 
 
 def run_discovery(
@@ -92,6 +102,11 @@ def run_discovery(
     "greenhouse" once regardless of how many boards), and what's compared
     against a `--source` filter. Each JobSource instance is queried once
     per profile query.
+
+    Every job is scored and evaluated deterministically. `use_ai` never
+    sends each job to Claude (Phase 4.3); it reviews only the top `limit`
+    results, within `preferences.ai_refinement` — see
+    ingestion/ai_refinement.py.
     """
     career_profile = career_profile or CareerProfile.load()
     preferences = preferences or Preferences.load()
@@ -103,6 +118,7 @@ def run_discovery(
     result.metrics.search_profiles = len(profiles)
 
     touched: dict[int, tuple[JobRecord, CareerFitResult]] = {}
+    score_cache: dict[int, CareerFitResult] = {}
 
     for profile in profiles:
         for query_text in profile.queries:
@@ -112,7 +128,8 @@ def run_discovery(
                     ingestion = run_search_ingestion(
                         source, query, repository,
                         profile=career_profile, preferences=preferences,
-                        score=True, use_ai=use_ai, evidence_index=evidence_index,
+                        score=True, use_ai=False, evidence_index=evidence_index,
+                        score_cache=score_cache,
                     )
                 except Exception as exc:  # noqa: BLE001 - one bad (source, query) shouldn't kill the run
                     logger.error(
@@ -120,12 +137,18 @@ def run_discovery(
                         extra={"family": family, "source": source.name, "profile": profile.name, "query": query_text},
                         exc_info=True,
                     )
+                    kind = getattr(exc, "kind", type(exc).__name__)
                     result.notes.append(
-                        f"'{profile.name}' query {query_text!r} against {source.name} failed: {exc}"
+                        f"'{profile.name}' query {query_text!r} against {source.name} failed ({kind}): {exc}"
                     )
+                    result.metrics.failures_by_source.setdefault(family, []).append(f"{kind}: {exc}")
                     continue
 
                 result.metrics.raw_jobs_discovered += ingestion.jobs_discovered
+                m = result.metrics
+                m.raw_by_source[family] = m.raw_by_source.get(family, 0) + ingestion.jobs_discovered
+                m.new_by_source[family] = m.new_by_source.get(family, 0) + ingestion.jobs_new
+                m.parse_errors_by_source[family] = m.parse_errors_by_source.get(family, 0) + ingestion.parser_errors
                 result.metrics.new_jobs += ingestion.jobs_new
                 result.metrics.updated_jobs += ingestion.jobs_updated
 
@@ -154,7 +177,7 @@ def run_discovery(
         normalized = job_record_to_normalized(job)
         eval_result = evaluate_opportunity(
             normalized, fit, candidate=candidate, preferences=preferences,
-            taxonomy=taxonomy, evidence_index=evidence_index, use_ai=use_ai,
+            taxonomy=taxonomy, evidence_index=evidence_index, use_ai=False,
         )
         opportunities.append(
             DiscoveryOpportunity(
@@ -180,5 +203,15 @@ def run_discovery(
         opportunities = [o for o in opportunities if o.fit.overall_fit >= min_fit]
 
     opportunities.sort(key=lambda o: o.rank_score, reverse=True)
+    if use_ai and opportunities:
+        from careers_os.ingestion.ai_refinement import refine_finalists  # avoids an import cycle
+
+        result.ai_refinement = refine_finalists(
+            opportunities[:limit], repository=repository,
+            budget=min(limit, preferences.ai_refinement.max_refinements_per_run),
+            profile=career_profile, preferences=preferences, candidate=candidate,
+            taxonomy=taxonomy, evidence_index=evidence_index,
+        )
+        opportunities.sort(key=lambda o: o.rank_score, reverse=True)
     result.opportunities = opportunities[:limit]
     return result

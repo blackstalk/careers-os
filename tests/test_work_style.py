@@ -273,7 +273,7 @@ class TestPersistenceAndAlerts:
         saved = repo.save_evaluation(record.id, decision)
         assert saved.work_style["style"] == "customer_heavy"
         assert "demos" in saved.work_style["customer_signals"]
-        assert saved.evaluation_version == "opportunity-decision-v2"
+        assert saved.evaluation_version == "opportunity-decision-v3"
 
     def test_existing_database_gets_work_style_column(self, tmp_path):
         path = tmp_path / "old.db"

@@ -45,6 +45,12 @@ class AshbySource(JobSource):
         self.parse_failures = 0
         self.last_error: Optional[str] = None
         self._notes: list[str] = []
+        self._listing = None  # one board download per instance/run; boards list every job at once
+
+    def _board_listing(self):
+        if self._listing is None:
+            self._listing = self._client.list_jobs(self.board_name)
+        return self._listing
 
     def close(self) -> None:
         if self._owns_client:
@@ -63,7 +69,7 @@ class AshbySource(JobSource):
         return title_hits * 5 + body_hits
 
     def _list_raw_jobs(self) -> list[RawJob]:
-        response = self._client.list_jobs(self.board_name)
+        response = self._board_listing()
         items = response.get("jobs", [])
         logger.info("ashby.list_completed", extra={"board": self.board_name, "total": len(items)})
 

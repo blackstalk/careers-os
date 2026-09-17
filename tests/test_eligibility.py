@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from careers_os.career.candidate import CandidateProfile
 from careers_os.career.eligibility import evaluate_eligibility
 from careers_os.domain.eligibility import ConstraintType, EligibilityStatus
@@ -97,6 +99,24 @@ class TestSecurityClearance:
         candidate = _candidate(security_clearance={"held": False})
         result = evaluate_eligibility(job, candidate)
         assert result.status == EligibilityStatus.INELIGIBLE
+
+
+class TestClearanceWording:
+    @pytest.mark.parametrize("text", [
+        "Appian Solution Architect - Clearance Required",
+        "Active Secret clearance. U.S. citizenship required.",
+        "Clearance and Access: this position requires U.S. citizenship and CAC eligibility.",
+        "Ability to obtain and maintain a DHS Public Trust.",
+    ])
+    def test_government_contractor_phrasings_are_not_silently_eligible(self, text):
+        # Phase 4.3: these reached strong_pursue from aggregator postings.
+        job = _job("Role", text)
+        assert evaluate_eligibility(job, _candidate()).status == EligibilityStatus.UNKNOWN
+
+
+    def test_public_trust_in_ordinary_prose_is_not_a_clearance(self):
+        job = _job("Staff Forward Deployed Engineer", "Step in when executive confidence or public trust is at risk.")
+        assert evaluate_eligibility(job, _candidate()).status == EligibilityStatus.ELIGIBLE
 
 
 class TestRelocation:
@@ -209,6 +229,35 @@ class TestRemoteLocationGeography:
         job = job.model_copy(update={"location": "United States - Remote"})
         result = evaluate_eligibility(job, _candidate())
         assert result.status == EligibilityStatus.ELIGIBLE
+
+    @pytest.mark.parametrize(("title", "location"), [
+        ("Senior Solutions Architect - Europe", "EU | Remote"),
+        ("Senior Pre-Sales Solutions Engineer (Australia)", "Sydney, Australia"),
+        ("Sr AI Engineer | Remote - Europe | TS/Vue/NodeJS", "Berlin Office"),
+        ("Solutions Engineer", "London"),
+        ("Forward Deployed Engineer (Europe)", None),
+        ("Forward Deployed Engineer, Agentic Platform (Korea)", "Seoul"),
+    ])
+    def test_region_or_hub_city_without_the_word_remote_is_verify(self, title, location):
+        # Seen on remote-first Ashby boards (Phase 4.2): remote-flagged
+        # postings whose only scope signal is a hub city, "EU", or a
+        # region in the title.
+        job = _job(title, "Fully remote role.", remote_status=RemoteStatus.REMOTE)
+        job = job.model_copy(update={"location": location})
+        assert evaluate_eligibility(job, _candidate()).status == EligibilityStatus.VERIFY
+
+    @pytest.mark.parametrize(("title", "location"), [
+        ("Technical Account Manager (US)", "United States"),
+        ("Staff AI Engineer | US | Remote", "Remote"),
+        ("Solutions Engineer (US/Canada)", "Toronto"),
+        ("Solutions Engineer (Texas)", "Dallas, TX"),
+        ("Senior Engineer", "United States, United Kingdom - Remote"),
+        ("Senior Engineer", "Remote (Worldwide)"),
+    ])
+    def test_us_inclusive_or_unscoped_remote_is_unaffected(self, title, location):
+        job = _job(title, "Fully remote role.", remote_status=RemoteStatus.REMOTE)
+        job = job.model_copy(update={"location": location})
+        assert evaluate_eligibility(job, _candidate()).status == EligibilityStatus.ELIGIBLE
 
     def test_non_remote_job_is_never_checked_for_location_geography(self):
         # A hybrid/onsite role with a foreign-sounding location string is

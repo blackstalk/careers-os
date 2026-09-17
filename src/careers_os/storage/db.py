@@ -237,6 +237,24 @@ class PossibleDuplicateRecord(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AIRefinementRecord(Base):
+    """One stored Claude review of a job (Phase 4.3), keyed by the job's
+    content and the prompt version, so a finalist that is deferred run
+    after run is reviewed once, not once per run — see
+    ingestion/ai_refinement.py. A changed description or prompt simply
+    misses the cache and is reviewed again."""
+
+    __tablename__ = "ai_refinements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    content_hash: Mapped[str] = mapped_column(String)
+    prompt_version: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    result: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class JobChangeRecord(Base):
     """Append-only field-level change log, written by JobRepository.upsert_job
     when a re-synced job's data differs from what's stored. See
@@ -281,6 +299,7 @@ class JobEvaluationRecord(Base):
     pursue_reason: Mapped[str] = mapped_column(String)
     pursue_factors: Mapped[list] = mapped_column(JSON, default=list)
     work_style: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    career_track: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
 
 class NotificationRecord(Base):
@@ -332,6 +351,9 @@ def _apply_lightweight_migrations(engine: Engine) -> None:
         if "work_style" not in existing:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE job_evaluations ADD COLUMN work_style JSON"))
+        if "career_track" not in existing:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE job_evaluations ADD COLUMN career_track JSON"))
 
 
 def get_engine(db_path: Optional[Path] = None) -> Engine:

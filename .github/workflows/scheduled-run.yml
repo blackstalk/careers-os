@@ -45,7 +45,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        # `ai` installs the optional Anthropic client. Without it every AI
+        # review was silently skipped in production before Phase 4.3, even
+        # with the ANTHROPIC_API_KEY secret set.
+        run: pip install -e ".[dev,ai]"
 
       # actions/cache entries are immutable per key — restore the most
       # recent one via the `restore-keys` prefix (there is no cache
@@ -87,10 +90,11 @@ jobs:
           SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
           CAREERS_ALERT_EMAIL: ${{ secrets.CAREERS_ALERT_EMAIL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        # AI evidence-reasoning layer enabled (ANTHROPIC_API_KEY secret
-        # configured) — see docs/pursue-recommendation.md's AI guardrails
-        # section for what it can/can't do; deterministic scoring/
-        # qualification/pursue logic is unaffected either way.
+        # With the ANTHROPIC_API_KEY secret set, Claude reviews only the
+        # finalists above the alert threshold, capped by
+        # ai_refinement.max_refinements_per_run in preferences.yaml, with
+        # stored reviews reused across runs (docs/scoring.md#bounded-ai-refinement).
+        # Without the secret the run is fully deterministic and still succeeds.
         #
         # Invoked as a module, not the `jobs` console script — bash's own
         # `jobs` builtin (lists background jobs) intercepts a bare `jobs

@@ -35,6 +35,14 @@ def normalize_location(location: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", location.lower()).strip()
 
 
+def description_fingerprint(description: str | None) -> str:
+    """First ~300 alphanumeric characters — a cheap, exact key for spotting
+    copy-pasted reposts before running the expensive similarity check."""
+    if not description:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "", description.lower())[:300]
+
+
 def description_similarity(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, a, b).ratio()
 

@@ -12,3 +12,12 @@ boards:
   - stripe
   - figma
   - brex
+  # Phase 4.2: remote-first employers (verified live 2026-09-17; most of
+  # their postings name "Remote" in the location, which the Greenhouse
+  # adapter needs to detect remote work at all).
+  - gitlab
+  - grafanalabs
+  - twilio
+  - launchdarkly
+  - samsara
+  - fivetran

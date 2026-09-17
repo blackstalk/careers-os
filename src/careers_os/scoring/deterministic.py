@@ -5,6 +5,8 @@ a human-readable reason, concrete evidence, and a confidence that is honest
 about missing data — see docs/scoring.md for the design rationale.
 """
 
+import re
+from functools import lru_cache
 from typing import Optional
 
 from careers_os.career.bridge_role import BRIDGE_SIGNAL_CATEGORIES
@@ -16,7 +18,7 @@ from careers_os.domain.job import NormalizedJob
 from careers_os.domain.matching import MatchType
 from careers_os.domain.scoring import FitComponent
 
-SCORER_VERSION = "deterministic-v1"
+SCORER_VERSION = "deterministic-v2"
 
 # Mirrors scoring/qualification.py's _MATCH_SCORE mapping — duplicated
 # rather than imported so this module doesn't reach into another
@@ -29,9 +31,22 @@ _EVIDENCE_MATCH_SCORE = {
 }
 
 
+@lru_cache(maxsize=512)
+def _keyword_pattern(keyword: str) -> re.Pattern:
+    # Must start at a word boundary: a bare substring test let "ai" match
+    # "email" and "maintain", "ml" match "html", and "api" match
+    # "capital", which saturated technical_fit for nearly every posting
+    # (Phase 4.3). Single words must also end at one (plural allowed);
+    # multi-word phrases are specific enough to keep matching their
+    # inflections ("forward deployed engineers", "platform engineering").
+    kw = keyword.lower().strip()
+    tail = "" if " " in kw else r"s?(?![a-z0-9])"
+    return re.compile(r"(?<![a-z0-9])" + re.escape(kw) + tail)
+
+
 def _keyword_matches(text: str, keywords: list[str]) -> list[str]:
     lowered = text.lower()
-    return [kw for kw in keywords if kw.lower() in lowered]
+    return [kw for kw in keywords if _keyword_pattern(kw).search(lowered)]
 
 
 def _keyword_score(matched: list[str], saturate_at: int = 3) -> float:

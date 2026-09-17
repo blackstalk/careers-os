@@ -35,6 +35,12 @@ class WorkableSource(JobSource):
         self.parse_failures = 0
         self.last_error: Optional[str] = None
         self._notes: list[str] = []
+        self._listing = None  # one board download per instance/run; boards list every job at once
+
+    def _board_listing(self):
+        if self._listing is None:
+            self._listing = self._client.list_jobs(self.account)
+        return self._listing
 
     def close(self) -> None:
         if self._owns_client:
@@ -51,7 +57,7 @@ class WorkableSource(JobSource):
         return (raw.raw_title or "").lower().count(keyword) * 5 + (raw.raw_description or "").lower().count(keyword)
 
     def _list_raw_jobs(self, account: str) -> list[RawJob]:
-        response = self._client.list_jobs(account)
+        response = self._board_listing() if account == self.account else self._client.list_jobs(account)
         items = response.get("jobs", [])
         company_name = response.get("name")
         logger.info("workable.list_completed", extra={"account": account, "total": len(items)})

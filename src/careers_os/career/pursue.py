@@ -11,11 +11,13 @@ opportunity cost — see docs/pursue-recommendation.md.
 from careers_os.career.opportunity_value import OpportunityAssessment, OpportunityLevel
 from careers_os.domain.eligibility import EligibilityResult, EligibilityStatus
 from careers_os.domain.opportunity_decision import (
+    CareerTrackResult,
     OpportunityCostLevel,
     OpportunityCostResult,
     PursueRecommendation,
     PursueResult,
     WorkStyle,
+    TrackAlignment,
     WorkStyleResult,
 )
 from careers_os.domain.qualification import QualificationResult, QualificationStatus
@@ -29,6 +31,46 @@ def compute_pursue_recommendation(
     opportunity_cost: OpportunityCostResult,
     work_style: WorkStyleResult | None = None,
     disfavored_work_styles: frozenset[WorkStyle] | set[WorkStyle] = frozenset(),
+    career_track: CareerTrackResult | None = None,
+) -> PursueResult:
+    result = _base_recommendation(
+        eligibility, qualification, immediate, direction, opportunity_cost, work_style, disfavored_work_styles
+    )
+    if career_track is None or result.recommendation not in _TRACK_CAPPED:
+        return result
+    factors = [*result.contributing_factors, f"career_track={career_track.alignment.value}"]
+
+    # Career-track relevance (Phase 4.3): strong_pursue needs affirmative
+    # evidence that the job is on one of the candidate's two paths; a
+    # title that defines an unrelated role caps it at consider.
+    if career_track.alignment == TrackAlignment.OFF_TRACK:
+        return PursueResult(
+            recommendation=PursueRecommendation.CONSIDER,
+            reason=f"Capped at consider: {career_track.reason}",
+            contributing_factors=factors,
+        )
+    if career_track.alignment == TrackAlignment.UNCLEAR and result.recommendation == PursueRecommendation.STRONG_PURSUE:
+        return PursueResult(
+            recommendation=PursueRecommendation.PURSUE,
+            reason=f"{result.reason} Not strong: {career_track.reason}",
+            contributing_factors=factors,
+        )
+    return result.model_copy(update={"contributing_factors": factors})
+
+
+# Only these are adjusted by the career-track check; gates and lower
+# recommendations already say "don't prioritize this".
+_TRACK_CAPPED = frozenset({PursueRecommendation.STRONG_PURSUE, PursueRecommendation.PURSUE})
+
+
+def _base_recommendation(
+    eligibility: EligibilityResult,
+    qualification: QualificationResult,
+    immediate: OpportunityAssessment,
+    direction: OpportunityAssessment,
+    opportunity_cost: OpportunityCostResult,
+    work_style: WorkStyleResult | None,
+    disfavored_work_styles: frozenset[WorkStyle] | set[WorkStyle],
 ) -> PursueResult:
     factors: list[str] = []
 

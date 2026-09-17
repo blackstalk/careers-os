@@ -10,8 +10,15 @@ from careers_os.domain.job import NormalizedJob
 from careers_os.domain.opportunity_decision import OpportunityDecision
 from careers_os.domain.raw_job import RawJob
 from careers_os.domain.scoring import CareerFitResult
-from careers_os.storage.dedup import MIN_CONFIDENCE_TO_FLAG, compare_jobs
+from careers_os.storage.dedup import (
+    MIN_CONFIDENCE_TO_FLAG,
+    compare_jobs,
+    description_fingerprint,
+    normalize_company,
+    normalize_title,
+)
 from careers_os.storage.db import (
+    AIRefinementRecord,
     JobChangeRecord,
     JobEvaluationRecord,
     JobRecord,
@@ -22,6 +29,10 @@ from careers_os.storage.db import (
 )
 
 logger = logging.getLogger("careers_os.storage")
+
+# compare_jobs gives title+company matches 0.85 (0.95 with location);
+# description-only matches top out at 0.8.
+HIGH_CONFIDENCE_DUPLICATE = 0.85
 
 
 def _comp_summary(salary_min, salary_max, hourly_min, hourly_max) -> str:
@@ -43,6 +54,10 @@ class JobRepository:
 
     def __init__(self, session: Session) -> None:
         self.session = session
+        # Lazily built (id, source, title, company, description fingerprint)
+        # index for the cross-source duplicate scan — see
+        # _duplicate_candidate_ids.
+        self._dedup_index: list[tuple[int, str, str, str, str]] | None = None
 
     def _find(self, source: str, source_job_id: str) -> Optional[JobRecord]:
         stmt = select(JobRecord).where(
@@ -167,9 +182,11 @@ class JobRepository:
         """Flag (never merge) possible duplicates against jobs from OTHER
         sources. Only run once, at first discovery — see storage/dedup.py.
         """
-        candidates = self.session.execute(
-            select(JobRecord).where(JobRecord.source != new_job.source, JobRecord.id != new_job.id)
-        ).scalars().all()
+        candidate_ids = self._duplicate_candidate_ids(new_job)
+        candidates = (
+            self.session.execute(select(JobRecord).where(JobRecord.id.in_(candidate_ids))).scalars().all()
+            if candidate_ids else []
+        )
 
         for other in candidates:
             signal = compare_jobs(
@@ -225,10 +242,34 @@ class JobRepository:
             pursue_reason=decision.pursue.reason,
             pursue_factors=decision.pursue.contributing_factors,
             work_style=decision.work_style.model_dump(mode="json"),
+            career_track=decision.career_track.model_dump(mode="json"),
         )
         self.session.add(record)
         self.session.flush()
         return record
+
+    def get_ai_refinement(self, job_id: int, content_hash: str, prompt_version: str) -> Optional[dict]:
+        stmt = (
+            select(AIRefinementRecord)
+            .where(
+                AIRefinementRecord.job_id == job_id,
+                AIRefinementRecord.content_hash == content_hash,
+                AIRefinementRecord.prompt_version == prompt_version,
+            )
+            .order_by(AIRefinementRecord.id.desc())
+            .limit(1)
+        )
+        record = self.session.execute(stmt).scalar_one_or_none()
+        return record.result if record else None
+
+    def save_ai_refinement(
+        self, job_id: int, content_hash: str, prompt_version: str, model: str, result: dict
+    ) -> None:
+        self.session.add(AIRefinementRecord(
+            job_id=job_id, content_hash=content_hash, prompt_version=prompt_version,
+            model=model, result=result, created_at=datetime.now(timezone.utc),
+        ))
+        self.session.flush()
 
     def get_latest_evaluation(self, job_id: int) -> Optional[JobEvaluationRecord]:
         stmt = (
@@ -274,6 +315,50 @@ class JobRepository:
         if status:
             stmt = stmt.where(NotificationRecord.status == status)
         return list(self.session.execute(stmt).scalars().all())
+
+    def _duplicate_candidate_ids(self, new_job: JobRecord) -> list[int]:
+        """Cheap prefilter before the expensive description comparison:
+        only other-source jobs sharing a normalized title, a normalized
+        company, or an identical description fingerprint can be flagged in
+        practice (compare_jobs needs title+company, or near-identical
+        descriptions). Comparing every pair made the scan quadratic in
+        description length once aggregator sources added thousands of jobs.
+        """
+        if self._dedup_index is None:
+            rows = self.session.execute(
+                select(JobRecord.id, JobRecord.source, JobRecord.title, JobRecord.company, JobRecord.description)
+            ).all()
+            self._dedup_index = [
+                (r.id, r.source, normalize_title(r.title or ""), normalize_company(r.company or ""),
+                 description_fingerprint(r.description))
+                for r in rows
+            ]
+        title = normalize_title(new_job.title or "")
+        company = normalize_company(new_job.company or "")
+        fingerprint = description_fingerprint(new_job.description)
+        ids = [
+            job_id for job_id, source, t, c, f in self._dedup_index
+            if job_id != new_job.id and source != new_job.source
+            and ((title and t == title) or (company and c == company) or (fingerprint and f == fingerprint))
+        ]
+        self._dedup_index.append((new_job.id, new_job.source, title, company, fingerprint))
+        return ids
+
+    def duplicate_job_ids(self, job_id: int, min_confidence: float = HIGH_CONFIDENCE_DUPLICATE) -> set[int]:
+        """Job ids flagged as duplicates of this job, either direction.
+
+        Defaults to high-confidence flags only (same company and title):
+        decisions that act on duplicates — alert suppression, aggregator
+        supersession — must not trust a description-similarity-only flag,
+        which can match two different jobs sharing boilerplate text.
+        """
+        rows = self.session.execute(
+            select(PossibleDuplicateRecord.job_a_id, PossibleDuplicateRecord.job_b_id).where(
+                ((PossibleDuplicateRecord.job_a_id == job_id) | (PossibleDuplicateRecord.job_b_id == job_id))
+                & (PossibleDuplicateRecord.confidence >= min_confidence)
+            )
+        ).all()
+        return {b if a == job_id else a for a, b in rows}
 
     def list_duplicates(self) -> list[PossibleDuplicateRecord]:
         return list(self.session.execute(select(PossibleDuplicateRecord)).scalars().all())

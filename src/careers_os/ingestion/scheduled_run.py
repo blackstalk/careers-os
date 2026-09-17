@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+from careers_os.career.applications import ApplicationLog
 from careers_os.career.candidate import CandidateProfile
 from careers_os.career.preferences import Preferences
 from careers_os.career.profile import CareerProfile
@@ -38,12 +39,15 @@ from careers_os.domain.eligibility import EligibilityStatus
 from careers_os.domain.enums import EmploymentType, OperatingMode
 from careers_os.domain.job import format_compensation
 from careers_os.domain.opportunity_decision import PursueRecommendation
+from careers_os.domain.qualification import QualificationStatus
+from careers_os.ingestion.ai_refinement import AIRefinementStats, refine_finalists
 from careers_os.ingestion.discovery import DiscoveryOpportunity, run_discovery
 from careers_os.ingestion.evaluation import EvaluationResult
 from careers_os.notifications.channel import NotificationChannel
 from careers_os.notifications.clustering import OpportunityCluster, cluster_opportunities, rank_clusters
 from careers_os.notifications.content import AlertContent, build_alert_content
 from careers_os.notifications.policy import alert_rank, should_alert
+from careers_os.sources.authority import is_aggregator
 from careers_os.sources.base import JobSource
 from careers_os.storage.repository import JobRepository
 
@@ -73,17 +77,45 @@ class ScheduledRunMetrics:
     alerts_selected: int = 0  # cluster representatives within budget (attempted, not necessarily sent)
     alerts_deferred: int = 0  # cluster representatives beyond budget — still alert-eligible next run
 
+    # Phase 4.2 — alert-eligible opportunities removed before selection.
+    applications_suppressed: int = 0  # already applied to / ruled out (applications.yaml or job status)
+    superseded_by_authoritative: int = 0  # aggregator copy of a job whose ATS posting was also found
+
+    # Phase 4.3 — bounded AI review of the opportunities above the alert
+    # threshold (see ingestion/ai_refinement.py). alert_threshold_count is
+    # counted *after* this review; this is the count before it.
+    deterministic_alert_threshold_count: int = 0
+    ai_refinement: AIRefinementStats = field(default_factory=AIRefinementStats)
+
     notifications_attempted: int = 0
     notifications_sent: int = 0
     notifications_suppressed_duplicate: int = 0
     failures: int = 0
+
+    sources: dict[str, "SourceFunnel"] = field(default_factory=dict)
+
+
+@dataclass
+class SourceFunnel:
+    """One source family's contribution to this run, for `jobs run` output."""
+
+    raw: int = 0
+    new: int = 0
+    parse_errors: int = 0
+    failures: list[str] = field(default_factory=list)
+    unique_jobs: int = 0
+    unique_to_source: int = 0  # no flagged duplicate from any other source
+    eligible: int = 0
+    qualified: int = 0  # strong or moderate qualification
+    pursue_or_better: int = 0
+    alert_threshold: int = 0
 
 
 @dataclass
 class AlertOutcome:
     opportunity: DiscoveryOpportunity
     content: AlertContent
-    status: str  # "sent" | "failed" | "suppressed_duplicate" | "dry_run" | "deferred"
+    status: str  # "sent" | "failed" | "suppressed_duplicate" | "dry_run" | "deferred" | "already_applied" | "superseded"
     error: Optional[str] = None
     related_variant_count: int = 0
 
@@ -95,6 +127,65 @@ class ScheduledRunResult:
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     notes: list[str] = field(default_factory=list)
+
+
+_CLOSED_JOB_STATUSES = {"applied", "interviewing", "offer", "rejected", "closed"}
+
+
+def _content(opp: DiscoveryOpportunity, related_variant_count: int = 0) -> AlertContent:
+    job = opp.job
+    return build_alert_content(
+        company=job.company or "", role=job.title,
+        location=job.location or "-", remote_status=job.remote_status,
+        compensation=format_compensation(job.salary_min, job.salary_max, job.hourly_min, job.hourly_max),
+        source=job.source, url=job.source_url,
+        result=EvaluationResult(decision=opp.decision, fit=opp.fit, bridge=opp.bridge, immediate=opp.immediate, direction=opp.direction),
+        related_variant_count=related_variant_count,
+    )
+
+
+def _already_applied(opp: DiscoveryOpportunity, repository: JobRepository, applications: ApplicationLog) -> bool:
+    """Applied to, or ruled out, per the committed applications.yaml or this
+    database's own job status — for this job or any flagged duplicate."""
+    job_ids = {opp.job.id, *repository.duplicate_job_ids(opp.job.id)}
+    for job_id in job_ids:
+        job = opp.job if job_id == opp.job.id else repository.session.get(type(opp.job), job_id)
+        if job is None:
+            continue
+        if job.status in _CLOSED_JOB_STATUSES:
+            return True
+        if applications.match(url=job.source_url, company=job.company, title=job.title):
+            return True
+    return False
+
+
+def _record_source_funnel(result: "ScheduledRunResult", discovery_result, repository: JobRepository) -> None:
+    dm = discovery_result.metrics
+    funnels = result.metrics.sources
+    for family in set(dm.raw_by_source) | set(dm.failures_by_source):
+        funnels[family] = SourceFunnel(
+            raw=dm.raw_by_source.get(family, 0),
+            new=dm.new_by_source.get(family, 0),
+            parse_errors=dm.parse_errors_by_source.get(family, 0),
+            failures=list(dm.failures_by_source.get(family, [])),
+        )
+    source_of = {o.job.id: o.job.source for o in discovery_result.opportunities}
+    for opp in discovery_result.opportunities:
+        f = funnels.setdefault(opp.job.source, SourceFunnel())
+        f.unique_jobs += 1
+        dup_sources = {
+            source_of.get(d) or getattr(repository.session.get(type(opp.job), d), "source", None)
+            for d in repository.duplicate_job_ids(opp.job.id)
+        }
+        if not (dup_sources - {opp.job.source, None}):
+            f.unique_to_source += 1
+        d = opp.decision
+        if d.eligibility.status == EligibilityStatus.ELIGIBLE:
+            f.eligible += 1
+        if d.qualification.status in (QualificationStatus.STRONG, QualificationStatus.MODERATE):
+            f.qualified += 1
+        if d.pursue.recommendation in (PursueRecommendation.PURSUE, PursueRecommendation.STRONG_PURSUE):
+            f.pursue_or_better += 1
 
 
 def _handle_cluster(
@@ -122,14 +213,7 @@ def _handle_cluster(
     opp = cluster.representative
     decision = opp.decision
     related_variant_count = cluster.additional_variant_count
-    content = build_alert_content(
-        company=opp.job.company or "", role=opp.job.title,
-        location=opp.job.location or "-", remote_status=opp.job.remote_status,
-        compensation=format_compensation(opp.job.salary_min, opp.job.salary_max, opp.job.hourly_min, opp.job.hourly_max),
-        source=opp.job.source, url=opp.job.source_url,
-        result=EvaluationResult(decision=decision, fit=opp.fit, bridge=opp.bridge, immediate=opp.immediate, direction=opp.direction),
-        related_variant_count=related_variant_count,
-    )
+    content = _content(opp, related_variant_count)
 
     def _outcome(status: str, error: Optional[str] = None) -> AlertOutcome:
         return AlertOutcome(
@@ -141,7 +225,13 @@ def _handle_cluster(
         result.alerts.append(_outcome("deferred"))
         return
 
-    prior_sent = repository.list_notifications(opp.job.id, status="sent")
+    # A duplicate of this job (e.g. the same posting found on another
+    # source) that was already emailed counts as this job being emailed.
+    prior_sent = [
+        n
+        for job_id in {opp.job.id, *repository.duplicate_job_ids(opp.job.id)}
+        for n in repository.list_notifications(job_id, status="sent")
+    ]
     current_rank = alert_rank(decision.pursue.recommendation)
     already_covered = any(
         alert_rank(PursueRecommendation(n.pursue_recommendation)) >= current_rank
@@ -199,18 +289,22 @@ def run_scheduled_pipeline(
     evidence_index=None,
     taxonomy: Optional[SkillsTaxonomy] = None,
     candidate: Optional[CandidateProfile] = None,
+    applications: Optional[ApplicationLog] = None,
 ) -> ScheduledRunResult:
     started_at = datetime.now(timezone.utc)
     preferences = preferences or Preferences.load()
     mode = preferences.operating_mode
     policy = preferences.alert_policy
+    applications = applications if applications is not None else ApplicationLog.load()
 
     logger.info("scheduled_run.started", extra={"operating_mode": mode.value, "dry_run": dry_run})
 
+    # Bulk discovery is always deterministic; AI review happens below,
+    # only for finalists and within budget.
     discovery_result = run_discovery(
         repository, sources, profiles,
         remote_only=remote_only, employment_types=employment_types, min_fit=None,
-        limit=_EFFECTIVELY_UNLIMITED, use_ai=use_ai, career_profile=career_profile,
+        limit=_EFFECTIVELY_UNLIMITED, use_ai=False, career_profile=career_profile,
         preferences=preferences, evidence_index=evidence_index, taxonomy=taxonomy,
         candidate=candidate,
     )
@@ -224,33 +318,71 @@ def run_scheduled_pipeline(
         notes=list(discovery_result.notes),
     )
 
+    _record_source_funnel(result, discovery_result, repository)
+
     if policy is None:
         result.notes.append("No alert_policy configured — evaluations ran, but no alerting was attempted.")
         result.completed_at = datetime.now(timezone.utc)
         logger.warning("scheduled_run.no_alert_policy_configured")
         return result
 
-    # --- Detection: which opportunities are alert-*eligible*? (Phase 4, unchanged) ---
-    alert_eligible: list[DiscoveryOpportunity] = []
-    evaluation_ids: dict[int, int] = {}
+    # --- Detection: which opportunities cross the alert threshold deterministically? ---
+    over_threshold: list[DiscoveryOpportunity] = []
     for opp in discovery_result.opportunities:
         decision = opp.decision
         if decision.eligibility.status == EligibilityStatus.ELIGIBLE:
             result.metrics.eligible_count += 1
         if decision.pursue.recommendation in (PursueRecommendation.PURSUE, PursueRecommendation.STRONG_PURSUE):
             result.metrics.pursue_threshold_count += 1
+        if should_alert(decision, policy, mode):
+            over_threshold.append(opp)
+    result.metrics.deterministic_alert_threshold_count = len(over_threshold)
 
-        if not should_alert(decision, policy, mode):
-            continue
+    # --- Removal before any AI spend: already applied, or an aggregator
+    # copy of an employer posting found this run (Phase 4.2) ---
+    authoritative_ids = {o.job.id for o in discovery_result.opportunities if not is_aggregator(o.job.source)}
+    finalists: list[DiscoveryOpportunity] = []
+    removed: list[tuple[DiscoveryOpportunity, str]] = []
+    for opp in over_threshold:
+        if _already_applied(opp, repository, applications):
+            result.metrics.applications_suppressed += 1
+            removed.append((opp, "already_applied"))
+        elif is_aggregator(opp.job.source) and repository.duplicate_job_ids(opp.job.id) & authoritative_ids:
+            result.metrics.superseded_by_authoritative += 1
+            removed.append((opp, "superseded"))
+        else:
+            finalists.append(opp)
+
+    # --- Bounded AI review of finalists, in alert-ranking order (Phase 4.3) ---
+    if use_ai:
+        review_order = [
+            member
+            for cluster in rank_clusters(cluster_opportunities(finalists))
+            for member in [cluster.representative, *(v for v in cluster.variants if v is not cluster.representative)]
+        ]
+        result.metrics.ai_refinement = refine_finalists(
+            review_order, repository=repository,
+            budget=preferences.ai_refinement.max_refinements_per_run,
+            profile=career_profile, preferences=preferences, candidate=candidate,
+            taxonomy=taxonomy, evidence_index=evidence_index,
+        )
+    else:
+        result.metrics.ai_refinement = AIRefinementStats(status="disabled (--no-ai)", finalists=len(finalists))
+
+    # Persist the evaluation (after any AI review) for every opportunity
+    # that crossed the threshold, regardless of whether it ends up
+    # selected, deferred, clustered away, or demoted by the review —
+    # evaluation history is orthogonal to notification selection.
+    evaluation_ids: dict[int, int] = {}
+    for opp in over_threshold:
+        evaluation_ids[opp.job.id] = repository.save_evaluation(opp.job.id, opp.decision).id
+    for opp, status in removed:
+        result.alerts.append(AlertOutcome(opportunity=opp, content=_content(opp), status=status))
+
+    alert_eligible = [opp for opp in finalists if should_alert(opp.decision, policy, mode)]
+    for opp in [*alert_eligible, *(o for o, _ in removed)]:
         result.metrics.alert_threshold_count += 1
-
-        # Persist the evaluation for every alert-eligible opportunity,
-        # regardless of whether it ends up selected, deferred, or
-        # clustered away below — evaluation history is orthogonal to
-        # notification selection (see module docstring).
-        evaluation_record = repository.save_evaluation(opp.job.id, decision)
-        evaluation_ids[opp.job.id] = evaluation_record.id
-        alert_eligible.append(opp)
+        result.metrics.sources.setdefault(opp.job.source, SourceFunnel()).alert_threshold += 1
 
     # --- Selection: which eligible opportunities actually get notified? (Phase 4.1) ---
     clusters = rank_clusters(cluster_opportunities(alert_eligible))
@@ -296,6 +428,13 @@ def run_scheduled_pipeline(
             "notifications_attempted": result.metrics.notifications_attempted,
             "notifications_sent": result.metrics.notifications_sent,
             "notifications_suppressed_duplicate": result.metrics.notifications_suppressed_duplicate,
+            "applications_suppressed": result.metrics.applications_suppressed,
+            "superseded_by_authoritative": result.metrics.superseded_by_authoritative,
+            "deterministic_alert_threshold_count": result.metrics.deterministic_alert_threshold_count,
+            "ai_refinement_status": result.metrics.ai_refinement.status,
+            "ai_refinement_calls": result.metrics.ai_refinement.calls,
+            "ai_refinement_reused": result.metrics.ai_refinement.reused,
+            "ai_refinement_changed": len(result.metrics.ai_refinement.changed),
             "failures": result.metrics.failures,
         },
     )

@@ -10,6 +10,7 @@ error, malformed response — must degrade to "skip AI evaluation", never
 break ingestion or scoring.
 """
 
+import importlib.util
 import json
 import logging
 import os
@@ -23,12 +24,22 @@ from careers_os.scoring.deterministic import forward_direction_matches
 logger = logging.getLogger("careers_os.scoring.ai")
 
 MODEL = "claude-sonnet-5"
+# Part of the stored-review cache key (storage AIRefinementRecord): bump
+# whenever the prompt or its inputs change meaning, so old reviews are
+# not reused for a different question.
+PROMPT_VERSION = "finalist-review-v2"
 
 _PROMPT_TEMPLATE = """\
-You are assisting a job-fit evaluation system. Judge whether this job's \
-*actual responsibilities* (not just its title) resemble the target career \
-direction below. Be skeptical of title inflation (e.g. "Architect" titles \
-that are really implementation-only roles).
+You are the final reviewer for a job-fit system. A deterministic filter \
+already ranked this job among its top matches; your job is to catch the cases it \
+can't: judge whether the job's *actual responsibilities* (not its title or \
+buzzwords) fit the candidate below. Be skeptical of title inflation, of \
+roles whose primary technology or domain is unrelated to the candidate's \
+(mobile, frontend-only, embedded, enterprise-product specialists, data \
+science/research), and of roles dominated by meetings, account management, \
+or pre-sales rather than hands-on building. Score low when that's the case. \
+Customer contact is optional: a hands-on internal or platform engineering \
+role can fit fully. Keep every text field short.
 
 Target career profile:
 {narrative}
@@ -45,14 +56,24 @@ Respond with ONLY a JSON object of this exact shape, no prose outside it:
   "role_fit_evidence": ["<short phrase from the listing>", ...],
   "career_direction_score": <0.0-1.0>,
   "career_direction_reason": "<one or two sentences>",
-  "strengths": ["<short phrase>", ...],
-  "risks": ["<short phrase>", ...]
+  "strengths": ["<short phrase>", ... at most 3],
+  "risks": ["<short phrase>", ... at most 3]
 }}
 """
 
 
 def is_available() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+
+def readiness() -> tuple[bool, str]:
+    """Whether a review can actually be made, and why not — checked once
+    per run so a missing key or package is reported once, not per job."""
+    if not is_available():
+        return False, "ANTHROPIC_API_KEY is not set"
+    if importlib.util.find_spec("anthropic") is None:
+        return False, "the 'anthropic' package is not installed (pip install -e '.[ai]')"
+    return True, "ready"
 
 
 def evaluate(job: NormalizedJob, profile: CareerProfile) -> Optional[dict]:
@@ -80,16 +101,26 @@ def evaluate(job: NormalizedJob, profile: CareerProfile) -> Optional[dict]:
         client = anthropic.Anthropic()
         response = client.messages.create(
             model=MODEL,
-            max_tokens=600,
+            max_tokens=1000,
             messages=[{"role": "user", "content": prompt}],
         )
         text = "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
-        return json.loads(text)
+        return _parse_json_object(text)
     except Exception as exc:  # noqa: BLE001 - AI eval must never take down scoring
         logger.warning("scoring.ai.failed", extra={"error": str(exc)})
         return None
+
+
+def _parse_json_object(text: str) -> Optional[dict]:
+    """The prompt asks for bare JSON, but tolerate a code fence or a
+    sentence around it: parse the outermost {...}."""
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    parsed = json.loads(text[start : end + 1])
+    return parsed if isinstance(parsed, dict) else None
 
 
 def apply_ai_evaluation(result: CareerFitResult, ai_result: dict) -> CareerFitResult:

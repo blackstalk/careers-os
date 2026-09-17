@@ -88,3 +88,12 @@ work_style:
   disfavored:
     - customer_heavy
     - coordination_heavy
+
+# Phase 4.3: the optional Claude review (needs ANTHROPIC_API_KEY) runs
+# only on finalists — opportunities already over the alert threshold, in
+# alert-ranking order (or the top of `jobs discover`) — never on every
+# discovered job. This caps how many *new* API calls one run may make;
+# reviews are stored per job content, so an unchanged job is never paid
+# for twice. Past the cap, jobs keep their deterministic evaluation.
+ai_refinement:
+  max_refinements_per_run: 15

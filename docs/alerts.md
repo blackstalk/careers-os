@@ -249,6 +249,35 @@ untouched — the alert budget and clustering results are run-level policy
 output, not source health, and `jobs run`'s own header already surfaces
 the active budget every time it runs.
 
+## AI review of finalists (Phase 4.3)
+
+After applied jobs and superseded aggregator copies are removed, the
+remaining over-threshold opportunities are reviewed by Claude in
+alert-ranking order, within `ai_refinement.max_refinements_per_run`
+(docs/scoring.md#bounded-ai-refinement). A review can demote an
+opportunity below the alert threshold; it is then not alerted, and its
+reviewed evaluation is still stored. `Meeting alert threshold` in `jobs
+run` is counted after review, with the deterministic count alongside.
+Without an API key (or with `--no-ai`) this step is skipped and the run is
+fully deterministic.
+
+## Applications, aggregator copies, and duplicates (Phase 4.2)
+
+Before clustering and the alert budget, the scheduled run removes two more
+kinds of alert-ready opportunities:
+
+- **`already_applied`**: the job, or a high-confidence duplicate of it, is
+  listed in the committed `career/data/applications.yaml` or has an
+  applied/closed status in the running database (docs/applications.md).
+- **`superseded`**: an aggregator copy (Himalayas) of a job whose
+  employer-posted copy was also found this run. The employer posting's own
+  evaluation decides.
+
+A job also counts as already emailed when any high-confidence duplicate of
+it was emailed. The metrics lines `Skipped as already applied` and
+`Skipped aggregator copies` show these counts. The per-source table shows
+where each run's jobs came from and whether any source failed.
+
 ## Email configuration
 
 Email is sent over SMTP using only the standard library (`smtplib`,

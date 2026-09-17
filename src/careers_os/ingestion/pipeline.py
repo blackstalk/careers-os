@@ -44,6 +44,7 @@ def run_search_ingestion(
     score: bool = True,
     use_ai: bool = True,
     evidence_index: EvidenceIndex | None = None,
+    score_cache: dict[int, CareerFitResult] | None = None,
 ) -> IngestionResult:
     """Run one search → normalize → dedup/persist → score pass.
 
@@ -84,12 +85,18 @@ def run_search_ingestion(
             result.jobs_updated += 1
 
         fit_result = None
-        if score:
+        if score and score_cache is not None and record.id in score_cache:
+            # Same job already scored earlier in this run (found by another
+            # query) — skip the repeat scoring and its AI call.
+            fit_result = score_cache[record.id]
+        elif score:
             normalized.id = record.id
             fit_result = score_job(
                 normalized, profile, preferences, use_ai=use_ai, evidence_index=evidence_index
             )
             repository.save_score(record.id, fit_result)
+            if score_cache is not None:
+                score_cache[record.id] = fit_result
 
         result.ranked_jobs.append(RankedJob(job=record, fit=fit_result))
 

@@ -47,6 +47,12 @@ class GreenhouseSource(JobSource):
         self.parse_failures = 0
         self.last_error: Optional[str] = None
         self._notes: list[str] = []
+        self._listing = None  # one board download per instance/run; boards list every job at once
+
+    def _board_listing(self):
+        if self._listing is None:
+            self._listing = self._client.list_jobs(self.board_token)
+        return self._listing
 
     def close(self) -> None:
         if self._owns_client:
@@ -66,7 +72,7 @@ class GreenhouseSource(JobSource):
 
     def search(self, query: JobSearchQuery) -> list[RawJob]:
         try:
-            response = self._client.list_jobs(self.board_token)
+            response = self._board_listing()
         except GreenhouseBoardNotFoundError as exc:
             self.last_error = str(exc)
             logger.error(

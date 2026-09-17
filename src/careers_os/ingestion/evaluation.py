@@ -14,6 +14,7 @@ from typing import Optional
 
 from careers_os.career.bridge_role import BridgeRoleResult, classify_bridge_role
 from careers_os.career.candidate import CandidateProfile
+from careers_os.career.career_track import classify_career_track
 from careers_os.career.eligibility import evaluate_eligibility
 from careers_os.career.evidence_index import EvidenceIndex
 from careers_os.career.freshness import assess_freshness
@@ -82,10 +83,12 @@ def evaluate_opportunity(
     scope = classify_scope(job.title, job.description, taxonomy)
     freshness = assess_freshness(job.posted_at, preferences.freshness_thresholds)
     work_style = classify_work_style(job.description)
+    career_track = classify_career_track(job.title, detail)
     pursue = compute_pursue_recommendation(
         eligibility, qualification, immediate, direction, opportunity_cost,
         work_style=work_style,
         disfavored_work_styles=set(preferences.work_style.disfavored),
+        career_track=career_track,
     )
 
     decision = OpportunityDecision(
@@ -96,5 +99,6 @@ def evaluate_opportunity(
         freshness=freshness,
         pursue=pursue,
         work_style=work_style,
+        career_track=career_track,
     )
     return EvaluationResult(decision=decision, fit=fit, bridge=bridge, immediate=immediate, direction=direction)

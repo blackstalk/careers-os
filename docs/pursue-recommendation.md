@@ -282,6 +282,61 @@ liaison role).
 - The optional AI layer does not refine work style; the deterministic
   result is the only source.
 
+## Career track (Phase 4.3)
+
+`career/career_track.py`. The Phase 4.2 dry run had 72 alert-ready jobs,
+many of them weak: React Native, SAP Commerce, program/account/engineering
+managers, an intern, a data scientist. They got there because nothing
+asked for *affirmative* evidence that a job is on one of the candidate's
+paths: generic API/AWS/AI/integration mentions the candidate can back up
+were enough.
+
+Two tracks:
+
+- **Stack-adjacent engineering**: PHP/Laravel/Craft/WordPress, backend,
+  full-stack, software/web engineering.
+- **Career-direction engineering**: AI/ML engineering (applied AI, LLM,
+  GenAI, agents, AI platform), and forward deployed, solutions/customer/
+  field/implementation/integration engineering, systems/platform
+  engineering, architects.
+
+Classification:
+
+| Result | When |
+|---|---|
+| `off_track` | The **title** names an unrelated primary identity: mobile, frontend/design systems, embedded/hardware/semiconductor/controls, enterprise-product specialisms (SAP, Appian, Informatica, MuleSoft, ServiceNow, …), data science/research, security specialism, management (manager/director/head of), sales/pre-sales/account roles, junior/intern/associate levels ("Senior Associate" excepted). |
+| `aligned` | An on-track title **and** matched experience in the description. AI titles need a supported AI requirement plus a supported systems requirement. Delivery titles (FDE, SA, SE, …) need two supported systems requirements. Stack titles need stack overlap plus a systems requirement, or two systems requirements. |
+| `unclear` | A neutral title ("Industry Principal"), or an on-track title without that evidence. |
+
+Only the title can make a job off-track. A technology in the title
+defines the role; the same word in the description is usually incidental
+(an FDE posting that mentions React is not a React role). Supported means
+a strong or partial match on a non-preferred requirement.
+
+Effect (applied after every other rule, only to `pursue`/`strong_pursue`):
+`off_track` caps at `consider`; `unclear` caps `strong_pursue` at
+`pursue`; `aligned` changes nothing. So `strong_pursue` now always has an
+explanation of why the job fits this candidate. The result is stored in
+`job_evaluations.career_track` and shown by `jobs evaluate` (CAREER TRACK)
+and `jobs discover`.
+
+On the Phase 4.2 dry-run set, together with the keyword-boundary fix
+(docs/scoring.md) and the eligibility additions below, this took
+`strong_pursue` from 73 to 44, removing every false positive listed
+above.
+
+Eligibility additions found in the same review: security-clearance
+phrasings used by government contractors ("Clearance Required" in a
+title, "Secret clearance", "TS/SCI", "CAC eligibility", "DHS public trust";
+bare "public trust" is ignored because it appears in ordinary prose), and
+Korea/Taiwan/Vietnam as non-US remote scopes.
+
+Known limitations: generic engineering titles ("Staff Engineer,
+People Technology", "Lead Software Engineer, Ads") pass when their
+descriptions overlap the candidate's experience, and a vendor-specific
+FDE role (Kong, GitLab) is still `aligned`. Both are what the bounded AI
+review (docs/scoring.md#bounded-ai-refinement) is for.
+
 ## Regression cases (real jobs, live-discovered)
 
 All three verified end-to-end through the actual CLI
@@ -303,7 +358,7 @@ eligibility, qualification, and opportunity cost from raw fit.
 ## Evaluation versioning and persistence
 
 `domain/opportunity_decision.py::EVALUATION_VERSION` (currently
-`"opportunity-decision-v2"`, bumped in Phase 4.2 when work style was added) is stamped on every stored
+`"opportunity-decision-v3"`, bumped in Phase 4.2 when work style was added and in Phase 4.3 for career track) is stamped on every stored
 `JobEvaluationRecord` (`storage/db.py`, append-only like
 `JobScoreRecord`) — `jobs evaluate` persists a new row each time it's
 run, so a job's recommendation history is inspectable over time, and it's

@@ -16,3 +16,19 @@ boards:
   - ramp
   - perplexity
   - workos
+  # Phase 4.2: remote-first AI / developer-tools employers (verified live
+  # 2026-09-17, most postings marked remote).
+  - supabase
+  - posthog
+  - linear
+  - replit
+  - cohere
+  - langchain
+  - baseten
+  - deepgram
+  - elevenlabs
+  - n8n
+  - zapier
+  - render
+  - railway
+  - pinecone

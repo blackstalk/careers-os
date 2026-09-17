@@ -40,6 +40,12 @@ class LeverSource(JobSource):
         self.parse_failures = 0
         self.last_error: Optional[str] = None
         self._notes: list[str] = []
+        self._listing = None  # one board download per instance/run; boards list every job at once
+
+    def _board_listing(self):
+        if self._listing is None:
+            self._listing = self._client.list_postings(self.company)
+        return self._listing
 
     def close(self) -> None:
         if self._owns_client:
@@ -59,7 +65,7 @@ class LeverSource(JobSource):
 
     def search(self, query: JobSearchQuery) -> list[RawJob]:
         try:
-            items = self._client.list_postings(self.company)
+            items = self._board_listing()
         except LeverCompanyNotFoundError as exc:
             self.last_error = str(exc)
             logger.error("lever.company_not_found", extra={"company": self.company})

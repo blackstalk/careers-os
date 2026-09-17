@@ -1,0 +1,65 @@
+{
+  "comments": "",
+  "updatedAt": 1789600000,
+  "offset": 0,
+  "limit": 20,
+  "totalCount": 4,
+  "jobs": [
+    {
+      "title": "Senior Laravel Engineer",
+      "excerpt": "Build our Laravel platform.",
+      "companyName": "Acme Remote",
+      "companySlug": "acme-remote",
+      "employmentType": "Full Time",
+      "minSalary": 150000,
+      "maxSalary": 190000,
+      "salaryPeriod": "annual",
+      "currency": "USD",
+      "seniority": ["Senior"],
+      "locationRestrictions": ["United States"],
+      "timezoneRestrictions": [-8, -5],
+      "description": "<p>Own our <strong>Laravel</strong> platform &amp; REST APIs on AWS.</p>",
+      "pubDate": 1789500000,
+      "applicationLink": "https://himalayas.app/companies/acme-remote/jobs/senior-laravel-engineer-111",
+      "guid": "https://himalayas.app/companies/acme-remote/jobs/senior-laravel-engineer-111"
+    },
+    {
+      "title": "Applied AI Engineer",
+      "companyName": "Globex AI",
+      "companySlug": "globex-ai",
+      "employmentType": "Contractor",
+      "minSalary": 90,
+      "maxSalary": 120,
+      "salaryPeriod": "hourly",
+      "currency": "USD",
+      "locationRestrictions": [],
+      "description": "<p>Ship LLM features.</p>",
+      "pubDate": 1789400000,
+      "applicationLink": "https://himalayas.app/companies/globex-ai/jobs/applied-ai-engineer-222",
+      "guid": "https://himalayas.app/companies/globex-ai/jobs/applied-ai-engineer-222"
+    },
+    {
+      "title": "Applied AI Engineer",
+      "companyName": "Globex AI",
+      "employmentType": "Contractor",
+      "locationRestrictions": [],
+      "description": "<p>Duplicate listing on the same page.</p>",
+      "pubDate": 1789400000,
+      "guid": "https://himalayas.app/companies/globex-ai/jobs/applied-ai-engineer-222"
+    },
+    {
+      "title": "Backend Engineer",
+      "companyName": "Initech",
+      "employmentType": "Full Time",
+      "locationRestrictions": ["Canada", "Germany"],
+      "description": "<p>Backend work.</p>",
+      "pubDate": 1789300000,
+      "guid": "https://himalayas.app/companies/initech/jobs/backend-engineer-333"
+    },
+    {
+      "title": "Malformed Without Guid",
+      "companyName": "Nowhere",
+      "description": "<p>x</p>"
+    }
+  ]
+}

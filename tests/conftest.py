@@ -15,6 +15,15 @@ def load_fixture(name: str) -> dict:
         return json.load(f)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_ai(request, monkeypatch):
+    """Offline tests never reach Claude, even when the developer's shell
+    has ANTHROPIC_API_KEY set; AI behavior is tested with fake evaluators.
+    Live tests (`-m live`) are left alone."""
+    if request.node.get_closest_marker("live") is None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+
 @pytest.fixture
 def search_response() -> dict:
     return load_fixture("search_response.json")

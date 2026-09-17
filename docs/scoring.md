@@ -69,6 +69,13 @@ score matters.
 
 ### Role / technical / career-direction fit
 
+Keyword matches must start at a word boundary (Phase 4.3). A plain
+substring test had let `ai` match "email"/"maintain", `ml` match "html",
+and `api` match "capital", which pushed `technical_fit` to 1.0 for nearly
+every posting. Single-word keywords must also end at a boundary (a plural
+`s` is allowed); multi-word phrases may take any ending ("forward deployed
+engineers", "platform engineering").
+
 `role_fit`/`technical_fit` are honestly weak, by design: keyword overlap
 against `career/data/profile.yaml` is a deterministic *first pass*, not a
 claim that it reliably judges whether a role is "truly architectural vs.
@@ -149,14 +156,61 @@ honest Phase 1 placeholder (neutral score, near-zero confidence) — see
 
 ## Optional AI layer (`scoring/ai.py`)
 
-If `ANTHROPIC_API_KEY` is set and the `anthropic` package is installed,
-`scoring/engine.py` additionally asks an LLM to judge `role_fit` and
+If `ANTHROPIC_API_KEY` is set and the `anthropic` package is installed
+(`pip install -e ".[ai]"`), an LLM can judge `role_fit` and
 `career_direction_fit` against the full job description — specifically
 targeting the kind of judgment keyword matching can't do (title inflation,
-"is this actually FDE-shaped work"). Its output *replaces* those two
-components' score/reason/evidence and raises `ai_evaluation_included` to
-`true` on the result; the other four components are always deterministic
-regardless.
+"is this actually FDE-shaped work", a primary stack or domain unrelated to
+the candidate's, a build title hiding an account-management job). Its
+`role_fit` *replaces* the deterministic one; its `career_direction_fit`
+can only *lower* an evidence-grounded score. `ai_evaluation_included`
+records that it happened; the other four components are always
+deterministic.
+
+### Bounded AI refinement (Phase 4.3)
+
+Before Phase 4.3 this layer was wired into `score_job` for *every*
+scored job, and the evidence reasoner into every evaluation. That would
+have been roughly 3,000 API calls per scheduled run (~1,700 unique jobs,
+each scored and reasoned, every run, nothing reused), and the evidence
+reasoner's output never changes a decision at all. It never actually ran
+in production only because CI didn't install `anthropic`.
+
+Now AI is a late-stage reviewer (`ingestion/ai_refinement.py`):
+
+1. Every discovered job is scored and evaluated deterministically
+   (`run_discovery` never sends individual jobs to Claude).
+2. **Finalists** are chosen by the existing pipeline:
+   - `jobs run`: opportunities over the operating mode's alert threshold,
+     after already-applied jobs and superseded aggregator copies are
+     removed, in alert-ranking order (cluster representative first).
+   - `jobs discover`: the top `--limit` results.
+3. Claude reviews finalists in that order until
+   `ai_refinement.max_refinements_per_run` (preferences.yaml, default
+   **15**, 3× the passive alert budget of 5) *new* calls have been made.
+   Remaining finalists keep their deterministic evaluation.
+4. Each review is stored (`ai_refinements` table) keyed by job, a hash of
+   title/company/description, and `ai.PROMPT_VERSION`. Later runs reuse it
+   for free, so a finalist deferred for days costs one call. Stored
+   reviews apply even when no key is configured. Failed or malformed
+   reviews (scores missing or outside 0–1) are not stored and are retried
+   next run.
+5. The decision is recomputed by the normal pipeline, so eligibility,
+   qualification, and career-track gates still apply. A review below
+   `role_fit` 0.4 caps the job at `consider` (reason: "Capped at consider
+   by AI review: …"); a middling review lowers career direction, which
+   turns `strong_pursue` into `pursue`.
+
+`jobs run` prints the result, e.g. `AI review (ran): 43 finalists, 15/15
+new calls, 0 stored reviews reused, 2 failed, 28 left deterministic` and one
+line per changed recommendation; `alert_threshold_count` is counted after
+review, with the deterministic count alongside. `jobs search ...` scores
+every result it prints, so AI there is opt-in (`--ai`, one call per job).
+The evidence reasoner still runs for single-job `jobs evaluate`.
+
+Expected volume: the first run on a fresh database reviews up to 15
+finalists; a normal daily run reviews only new or changed finalists
+(typically a handful), still capped at 15.
 
 Every failure mode here — no key, package not installed, network error,
 malformed model output — degrades to "skip AI evaluation" and falls back
