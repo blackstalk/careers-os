@@ -9,6 +9,7 @@ visible in `jobs discover` output; this function only decides sort order.
 """
 
 from careers_os.career.bridge_role import BridgeClassification, BridgeRoleResult
+from careers_os.domain.opportunity_decision import Freshness
 from careers_os.career.opportunity_value import OpportunityAssessment, OpportunityLevel
 from careers_os.career.preferences import DiscoveryRankingWeights
 from careers_os.domain.scoring import CareerFitResult
@@ -31,6 +32,18 @@ _OPPORTUNITY_SCORE = {
     OpportunityLevel.WEAK: 0.25,
     OpportunityLevel.UNKNOWN: 0.5,  # neutral — unknown is not the same as weak
 }
+
+
+# A posting still listed months later is less likely to still be open, and
+# competing against fresher ones for the same alert budget (Phase 4.4).
+# A penalty, not a filter: staleness is never confirmed closure.
+_STALE_PENALTY = 0.85
+
+
+def apply_freshness_penalty(rank_score: float, freshness: Freshness) -> float:
+    if freshness == Freshness.STALE:
+        return round(rank_score * _STALE_PENALTY, 4)
+    return rank_score
 
 
 def compute_rank_score(

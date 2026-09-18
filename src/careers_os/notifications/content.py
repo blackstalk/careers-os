@@ -21,6 +21,9 @@ _MAX_WATCHOUTS = 5
 _LOW_SCOPE_DIMENSIONS = {ScopeDimension.EXECUTION, ScopeDimension.MAINTENANCE}
 _COMP_CONFIDENCE_THRESHOLD = 0.3
 _COMP_STRONG_SCORE = 0.75
+# score_compensation_fit gives exactly 0.6 at the configured minimum, so
+# anything below that is a published figure under target (Phase 4.4).
+_COMP_BELOW_TARGET_SCORE = 0.6
 
 
 @dataclass
@@ -135,6 +138,8 @@ def _build_watchouts(result: EvaluationResult) -> list[str]:
     comp = result.fit.compensation_fit
     if comp.confidence < _COMP_CONFIDENCE_THRESHOLD:
         watchouts.append("Compensation is not published.")
+    elif comp.score < _COMP_BELOW_TARGET_SCORE:
+        watchouts.append(f"Compensation is below target — {comp.reason}")
 
     if decision.scope.primary_dimension in _LOW_SCOPE_DIMENSIONS:
         watchouts.append(

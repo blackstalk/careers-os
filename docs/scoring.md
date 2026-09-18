@@ -69,6 +69,13 @@ score matters.
 
 ### Role / technical / career-direction fit
 
+Compensation is compared whenever a figure is published, even when the
+source doesn't report an employment type (Greenhouse never does) — before
+Phase 4.4 those postings scored as "unknown" and alerts said
+"Compensation is not published" directly beneath a visible salary range.
+An alert now says "Compensation is below target" when a published figure
+is under `compensation.full_time.minimum_annual`.
+
 Keyword matches must start at a word boundary (Phase 4.3). A plain
 substring test had let `ai` match "email"/"maintain", `ml` match "html",
 and `api` match "capital", which pushed `technical_fit` to 1.0 for nearly
@@ -208,9 +215,21 @@ review, with the deterministic count alongside. `jobs search ...` scores
 every result it prints, so AI there is opt-in (`--ai`, one call per job).
 The evidence reasoner still runs for single-job `jobs evaluate`.
 
+Reviewing also **stops once enough reviewed finalists survive to fill the
+alert budget** (Phase 4.4). In the 2026-09-18 run, 8 of 15 calls went to
+jobs the review then demoted, so ranks 7-15 were never reviewed at all;
+now the run stops as soon as `max_alerts_per_run` survivors are confirmed
+and the remaining budget is simply not spent.
+
+The reviewer is also told which of the posting's requirements the
+deterministic matcher found real evidence for, so it stops counting
+evidenced experience as a gap — it penalized a Webflow FDE role for its
+CMS focus, which is a strength given the candidate's Craft/WordPress
+background. It still never sees the resume itself.
+
 Expected volume: the first run on a fresh database reviews up to 15
-finalists; a normal daily run reviews only new or changed finalists
-(typically a handful), still capped at 15.
+finalists (usually fewer, because of the early stop); a normal daily run
+reviews only new or changed finalists.
 
 Every failure mode here — no key, package not installed, network error,
 malformed model output — degrades to "skip AI evaluation" and falls back

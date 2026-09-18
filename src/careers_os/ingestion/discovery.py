@@ -18,7 +18,7 @@ from careers_os.career.opportunity_value import (
     assess_immediate_opportunity,
 )
 from careers_os.career.candidate import CandidateProfile
-from careers_os.career.discovery_ranking import compute_rank_score
+from careers_os.career.discovery_ranking import apply_freshness_penalty, compute_rank_score
 from careers_os.career.preferences import Preferences
 from careers_os.career.profile import CareerProfile
 from careers_os.career.search_profiles import SearchProfile
@@ -182,7 +182,8 @@ def run_discovery(
         opportunities.append(
             DiscoveryOpportunity(
                 job=job, fit=eval_result.fit, bridge=bridge, immediate=immediate, direction=direction,
-                matched_profiles=list(job.discovered_by_profiles), rank_score=rank_score,
+                matched_profiles=list(job.discovered_by_profiles),
+                rank_score=apply_freshness_penalty(rank_score, eval_result.decision.freshness.level),
                 decision=eval_result.decision,
             )
         )

@@ -331,11 +331,27 @@ title, "Secret clearance", "TS/SCI", "CAC eligibility", "DHS public trust";
 bare "public trust" is ignored because it appears in ordinary prose), and
 Korea/Taiwan/Vietnam as non-US remote scopes.
 
-Known limitations: generic engineering titles ("Staff Engineer,
-People Technology", "Lead Software Engineer, Ads") pass when their
-descriptions overlap the candidate's experience, and a vendor-specific
-FDE role (Kong, GitLab) is still `aligned`. Both are what the bounded AI
-review (docs/scoring.md#bounded-ai-refinement) is for.
+### Specialist platforms (Phase 4.4)
+
+A generic title can still hide a platform specialism: GitLab's "Staff
+Engineer, People Technology" reached `strong_pursue` with real API,
+automation, and PHP overlap while actually being Workday (8 mentions) and
+Workato (4) depth. So a short list of specialist platforms (Workday,
+Workato, SuccessFactors, UKG, BambooHR, SAP, NetSuite, Oracle ERP,
+Dynamics 365, ServiceNow, Appian, Pega, Informatica, MuleSoft, Boomi,
+Sitecore, AEM) is counted in the title+description: **three or more
+mentions means the platform defines the job**, and the result is
+`unclear` (capping `strong_pursue` at `pursue`) unless the candidate has
+evidence for it. Repetition is what separates defining from incidental —
+one SAP mention in an integration role is context, eight Workday mentions
+are the job. It stays `unclear`, not `off_track`, because a
+description-level signal is weaker than a title.
+
+Known limitations: generic engineering titles whose descriptions overlap
+the candidate's experience without a specialist platform ("Lead Software
+Engineer, Ads") still pass, and a vendor-specific FDE role (Kong) is
+still `aligned`. Both are what the bounded AI review
+(docs/scoring.md#bounded-ai-refinement) is for.
 
 ## Regression cases (real jobs, live-discovered)
 

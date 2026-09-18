@@ -225,6 +225,15 @@ of 27%, would have looked comparable on `overall_fit` alone but ranked
 lower once bridge/direction were factored in) — see the Phase 2.5 report
 for the full breakdown.
 
+### Staleness (Phase 4.4)
+
+A posting still listed months later competes for the same alert budget as
+a fresh one — three aged 91-153 days sat in one run's top 15.
+`career/discovery_ranking.py::apply_freshness_penalty` multiplies a
+`stale` posting's rank score by 0.85. A penalty, not a filter: staleness
+is never confirmed closure, and the alert already carries a "Posting is
+stale" watchout.
+
 ## Phase 3 update: pursue-worthiness leads the output
 
 As of Phase 3, each `jobs discover` result also carries a full

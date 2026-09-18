@@ -278,3 +278,31 @@ class TestMultipleConstraintsRollup:
         result = evaluate_eligibility(job, _candidate())  # TX candidate, unwilling to relocate
         assert result.status == EligibilityStatus.INELIGIBLE
         assert len(result.checks) == 2
+
+
+class TestCompensationReporting:
+    """Phase 4.4: Greenhouse doesn't report employment type, so a posted
+    salary was scored as "unknown" and alerts said "Compensation is not
+    published" next to a visible range."""
+
+    def _job(self, **kw):
+        return NormalizedJob(
+            source="t", source_job_id="1", source_url="https://e.com/1", title="Staff Engineer",
+            description="Role.", retrieved_at=datetime.now(timezone.utc), **kw,
+        )
+
+    def test_published_salary_counts_even_without_an_employment_type(self):
+        from careers_os.career.preferences import Preferences
+        from careers_os.scoring.deterministic import score_compensation_fit
+
+        comp = score_compensation_fit(self._job(salary_min=126400, salary_max=213600), Preferences.load())
+        assert comp.score == 1.0  # max is above the strong threshold
+        assert comp.confidence >= 0.3  # i.e. not reported as "not published"
+        assert "Employment type isn't stated" in comp.reason
+
+    def test_missing_salary_is_still_unknown(self):
+        from careers_os.career.preferences import Preferences
+        from careers_os.scoring.deterministic import score_compensation_fit
+
+        comp = score_compensation_fit(self._job(), Preferences.load())
+        assert comp.confidence < 0.3

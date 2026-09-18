@@ -32,9 +32,11 @@ WEAK_REVIEW = {
 class FakeClaude:
     def __init__(self, review=STRONG_REVIEW, error=None):
         self.review, self.error, self.calls = review, error, []
+        self.matched = ""
 
-    def __call__(self, job, profile):
+    def __call__(self, job, profile, matched=""):
         self.calls.append(job.title)
+        self.matched = matched
         if self.error:
             raise self.error
         return self.review
@@ -91,6 +93,33 @@ class TestBudget:
     def test_negative_budget_is_rejected(self):
         with pytest.raises(ValueError):
             AIRefinementSettings(max_refinements_per_run=-1)
+
+
+class TestStopsOnceTheAlertBudgetIsCovered:
+    def test_reviewing_stops_after_enough_survivors(self, db_session, evidence_index, claude):
+        # Phase 4.4: in the real run 8 of 15 calls went to jobs the review
+        # then demoted, so lower-ranked finalists were never reviewed.
+        prefs = _prefs_with_budget(15)
+        prefs = prefs.model_copy(update={"alert_policy": prefs.alert_policy.model_copy(update={
+            "active": prefs.alert_policy.active.model_copy(update={"max_alerts_per_run": 2})})})
+        result = run_scheduled_pipeline(
+            JobRepository(db_session), [("ashby", FakeSource("ashby", _catalog(6)))], PROFILES,
+            dry_run=True, channel=FakeChannel(), preferences=prefs, evidence_index=evidence_index,
+            applications=ApplicationLog(),
+        )
+        stats = result.metrics.ai_refinement
+        assert (stats.calls, stats.stopped_early) == (2, True)
+        assert stats.over_budget == 0  # stopped on purpose, not starved
+
+    def test_does_not_stop_while_reviews_keep_demoting(self, db_session, evidence_index, claude):
+        claude.review = WEAK_REVIEW
+        result = _run(db_session, evidence_index, _catalog(4), budget=3)
+        assert result.metrics.ai_refinement.calls == 3
+        assert result.metrics.ai_refinement.stopped_early is False
+
+    def test_reviewer_is_told_what_the_candidate_has_evidence_for(self, db_session, evidence_index, claude):
+        _run(db_session, evidence_index, _catalog(1))
+        assert "Solution / Solutions Architecture" in claude.matched
 
 
 class TestStoredReviews:
@@ -252,3 +281,40 @@ class TestClaudeClientPath:
 
         monkeypatch.setattr(type(sys.modules["anthropic"].Anthropic().messages), "reply", "I cannot help with that.")
         assert ai.evaluate(self._job(), CareerProfile.load()) is None
+
+
+class TestReviewWording:
+    """Phase 4.4: "AI review lowered this" appeared even when the AI agreed
+    (0.85 against a deterministic 1.0), misreading the alert."""
+
+    def _fit_with_direction(self, score):
+        from careers_os.domain.scoring import CareerFitResult, FitComponent
+        from careers_os.domain.experience import ExperienceFitDetail
+        from careers_os.domain.matching import MatchType, RequirementMatch
+        from careers_os.domain.requirements import JobRequirement, RequirementImportance
+        from careers_os.domain.taxonomy import SkillCategory
+
+        match = RequirementMatch(
+            requirement=JobRequirement(id="ai_ml", category=SkillCategory.AI_ML, canonical_skill="ai_ml",
+                                       text="AI / Machine Learning", importance=RequirementImportance.REQUIRED),
+            match_type=MatchType.STRONG_MATCH, reason="t",
+        )
+        c = FitComponent(score=score, reason="deterministic", evidence=[], confidence=0.8)
+        return CareerFitResult(
+            role_fit=c, technical_fit=c, career_direction_fit=c, compensation_fit=c,
+            work_arrangement_fit=c, experience_fit=c, overall_fit=score, scorer_version="t",
+            experience_detail=ExperienceFitDetail(requirement_matches=[match]),
+        )
+
+    def test_a_near_miss_is_not_described_as_lowered(self):
+        fit = ai.apply_ai_evaluation(self._fit_with_direction(1.0),
+                                     {"role_fit_score": 0.9, "career_direction_score": 0.95,
+                                      "career_direction_reason": "still a fit"})
+        assert "lowered" not in fit.career_direction_fit.reason
+        assert "AI review: still a fit" in fit.career_direction_fit.reason
+
+    def test_a_material_disagreement_still_says_lowered(self):
+        fit = ai.apply_ai_evaluation(self._fit_with_direction(1.0),
+                                     {"role_fit_score": 0.3, "career_direction_score": 0.4,
+                                      "career_direction_reason": "wrong domain"})
+        assert "AI review lowered this: wrong domain" in fit.career_direction_fit.reason

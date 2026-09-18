@@ -230,3 +230,67 @@ class TestPrecisionRegressions:
         decision = _evaluate("Senior React Native Developer", "Mobile apps." + _SHARED_BODY, evidence_index)
         saved = repo.save_evaluation(record.id, decision)
         assert saved.career_track["alignment"] == "off_track"
+
+
+class TestSpecialistPlatformDomains:
+    """Phase 4.4: GitLab's "Staff Engineer, People Technology" reached
+    strong_pursue — generic title, real API/automation overlap, but the job
+    is Workday/Workato depth."""
+
+    def test_platform_named_throughout_the_description_defines_the_job(self, evidence_index):
+        body = ("Own our Workday integrations. You will build Workday extracts, Workday Studio flows, and "
+                "Workato recipes connecting Workday to downstream systems." + _SHARED_BODY)
+        # Neutral title on purpose: this tests the platform rule alone, not
+        # the People/HR title family below.
+        decision = _evaluate("Staff Engineer, Business Systems", body, evidence_index)
+        assert decision.career_track.alignment == TrackAlignment.UNCLEAR
+        assert "Workday" in decision.career_track.reason
+        assert decision.pursue.recommendation != PursueRecommendation.STRONG_PURSUE
+
+    def test_platforms_listed_as_examples_do_not_define_the_job(self, evidence_index):
+        # Real Ciroos posting: ServiceNow appears 3 times, every time inside
+        # "e.g., ..." lists of integration targets.
+        body = ("Integrate with the customer's stack — ticketing (e.g., ServiceNow bi-directional sync), "
+                "ITSM/ticketing systems (e.g., ServiceNow), and marketplace certification "
+                "(e.g., ServiceNow Store, Microsoft Teams)." + _SHARED_BODY)
+        decision = _evaluate("Senior Forward Deployed Engineer", body, evidence_index)
+        assert decision.career_track.alignment == TrackAlignment.ALIGNED
+
+    def test_people_and_hr_systems_titles_are_off_track(self, evidence_index):
+        for title in ("Staff Engineer, People Technology", "People Analytics AI Engineer",
+                      "HRIS Engineer", "Human Resources Systems Engineer"):
+            decision = _evaluate(title, "Build integrations." + _SHARED_BODY, evidence_index)
+            assert decision.career_track.alignment == TrackAlignment.OFF_TRACK, title
+
+    def test_a_passing_mention_is_still_incidental(self, evidence_index):
+        body = ("Build integrations across our stack; one upstream system happens to be Workday." + _SHARED_BODY)
+        decision = _evaluate("Senior Forward Deployed Engineer", body, evidence_index)
+        assert decision.career_track.alignment == TrackAlignment.ALIGNED
+
+
+class TestBedrockCollision:
+    """Phase 4.4 regression: WordPress Bedrock evidence MUST NOT satisfy an
+    AWS Bedrock requirement. Hit live on Natera's posting."""
+
+    def test_aws_bedrock_requirement_does_not_match_wordpress_evidence(self, evidence_index):
+        from careers_os.scoring.requirements import extract_requirements
+
+        job = NormalizedJob(
+            source="t", source_job_id="1", source_url="https://e.com/1",
+            title="Senior Generative AI Engineer",
+            description="Hands-on experience with an enterprise agentic platform (CrewAI, LangChain, AWS Bedrock).",
+            retrieved_at=NOW,
+        )
+        skills = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load())}
+        assert "aws_bedrock" in skills
+        assert "wordpress" not in skills
+
+    def test_wordpress_evidence_still_matches_a_wordpress_posting(self):
+        from careers_os.scoring.requirements import extract_requirements
+
+        job = NormalizedJob(
+            source="t", source_job_id="1", source_url="https://e.com/1", title="WordPress Engineer",
+            description="Build WordPress Bedrock sites with ACF.", retrieved_at=NOW,
+        )
+        skills = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load())}
+        assert "wordpress" in skills

@@ -115,7 +115,10 @@ laravel:
 
 wordpress:
   display_name: WordPress
-  aliases: ["wordpress", "bedrock", " acf "]
+  # "bedrock" alone is deliberately NOT an alias: WordPress Bedrock (the
+  # Roots stack) and AWS Bedrock are unrelated, and the bare word let a
+  # posting asking for AWS Bedrock match WordPress evidence (Phase 4.4).
+  aliases: ["wordpress", "wordpress bedrock", " acf "]
   category: framework
   adjacent: [php, cms]
 
@@ -218,6 +221,12 @@ ai_ml:
 # evidence counts as related (adjacent), never as direct training
 # experience. `gpu_programming` has no adjacent skills — nothing else in
 # this taxonomy is a credible substitute for CUDA/kernel work.
+aws_bedrock:
+  display_name: AWS Bedrock
+  aliases: ["aws bedrock", "amazon bedrock"]
+  category: ai_ml
+  adjacent: [ai_ml, aws, cloud_infrastructure]
+
 ml_model_training:
   display_name: ML Model Training (PyTorch/TensorFlow/JAX)
   aliases: ["pytorch", "tensorflow", " jax", "model training", "training models", "training large-scale models", "pre-training", "pretraining"]

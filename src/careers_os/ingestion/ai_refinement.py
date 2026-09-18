@@ -24,12 +24,13 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from careers_os.career.candidate import CandidateProfile
-from careers_os.career.discovery_ranking import compute_rank_score
+from careers_os.career.discovery_ranking import apply_freshness_penalty, compute_rank_score
 from careers_os.career.evidence_index import EvidenceIndex
 from careers_os.career.preferences import Preferences
 from careers_os.career.profile import CareerProfile
 from careers_os.career.skills import SkillsTaxonomy
 from careers_os.domain.job import NormalizedJob
+from careers_os.domain.matching import MatchType
 from careers_os.domain.opportunity_decision import PursueRecommendation, PursueResult
 from careers_os.ingestion.discovery import DiscoveryOpportunity
 from careers_os.ingestion.evaluation import evaluate_opportunity
@@ -38,7 +39,7 @@ from careers_os.storage.repository import JobRepository, job_record_to_normalize
 
 logger = logging.getLogger("careers_os.ingestion.ai_refinement")
 
-Evaluator = Callable[[NormalizedJob, CareerProfile], Optional[dict]]
+Evaluator = Callable[..., Optional[dict]]  # (job, profile, matched=...) -> review
 
 _SCORE_FIELDS = ("role_fit_score", "career_direction_score")
 
@@ -59,6 +60,7 @@ class AIRefinementStats:
     reused: int = 0                  # stored reviews applied without a call
     failures: int = 0                # calls that errored or returned unusable output
     over_budget: int = 0             # finalists left deterministic because the budget ran out
+    stopped_early: bool = False      # enough reviewed survivors to fill the alert budget
     changed: list[str] = field(default_factory=list)  # "<title>: before -> after"
 
 
@@ -80,11 +82,27 @@ def _usable(result: object) -> Optional[dict]:
     return {**result, **scores}
 
 
+def _matched_summary(opp: DiscoveryOpportunity, limit: int = 12) -> str:
+    """The requirements this posting asks for that the candidate has real
+    evidence for — so the reviewer doesn't count evidenced experience as a
+    gap (it never sees the resume itself)."""
+    detail = opp.fit.experience_detail
+    if detail is None:
+        return ""
+    names = [
+        m.requirement.text for m in detail.requirement_matches
+        if m.match_type in (MatchType.STRONG_MATCH, MatchType.PARTIAL_MATCH)
+    ]
+    return ", ".join(dict.fromkeys(names))[:600]
+
+
 def refine_finalists(
     finalists: list[DiscoveryOpportunity],
     *,
     repository: JobRepository,
     budget: int,
+    stop_after_survivors: Optional[int] = None,
+    survives: Optional[Callable[[DiscoveryOpportunity], bool]] = None,
     profile: Optional[CareerProfile] = None,
     preferences: Optional[Preferences] = None,
     candidate: Optional[CandidateProfile] = None,
@@ -112,6 +130,7 @@ def refine_finalists(
 
     profile = profile or CareerProfile.load()
     preferences = preferences or Preferences.load()
+    survivors = 0
 
     for opp in finalists:
         job = job_record_to_normalized(opp.job)
@@ -121,13 +140,18 @@ def refine_finalists(
             stats.reused += 1
         elif evaluator is None:
             continue
+        elif stop_after_survivors is not None and survivors >= stop_after_survivors:
+            # The alert budget is already filled with reviewed survivors;
+            # spending on the rest changes nothing this run (Phase 4.4).
+            stats.stopped_early = True
+            continue
         elif stats.calls >= stats.budget:
             stats.over_budget += 1
             continue
         else:
             stats.calls += 1
             try:
-                review = _usable(evaluator(job, profile))
+                review = _usable(evaluator(job, profile, matched=_matched_summary(opp)))
             except Exception as exc:  # noqa: BLE001 - a review must never take down the run
                 logger.warning("ai_refinement.failed", extra={"job_id": opp.job.id, "error": str(exc)})
                 review = None
@@ -151,9 +175,14 @@ def refine_finalists(
                 contributing_factors=[*decision.pursue.contributing_factors, "ai_review=poor_fit"],
             )})
         opp.fit, opp.immediate, opp.direction, opp.decision = result.fit, result.immediate, result.direction, decision
-        opp.rank_score = compute_rank_score(
-            opp.fit, opp.bridge, opp.immediate, opp.direction, preferences.discovery_ranking_weights
+        opp.rank_score = apply_freshness_penalty(
+            compute_rank_score(
+                opp.fit, opp.bridge, opp.immediate, opp.direction, preferences.discovery_ranking_weights
+            ),
+            decision.freshness.level,
         )
+        if survives is not None and survives(opp):
+            survivors += 1
         after = opp.decision.pursue.recommendation
         if after != before:
             stats.changed.append(f"{opp.job.title} ({opp.job.company or 'unknown'}): {before.value} -> {after.value}")
@@ -164,7 +193,8 @@ def refine_finalists(
         extra={
             "status": stats.status, "budget": stats.budget, "finalists": stats.finalists,
             "calls": stats.calls, "reused": stats.reused, "failures": stats.failures,
-            "over_budget": stats.over_budget, "changed": len(stats.changed),
+            "over_budget": stats.over_budget, "stopped_early": stats.stopped_early,
+            "changed": len(stats.changed),
         },
     )
     return stats

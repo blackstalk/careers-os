@@ -363,6 +363,8 @@ def run_scheduled_pipeline(
         result.metrics.ai_refinement = refine_finalists(
             review_order, repository=repository,
             budget=preferences.ai_refinement.max_refinements_per_run,
+            stop_after_survivors=policy.for_mode(mode).max_alerts_per_run,
+            survives=lambda opp: should_alert(opp.decision, policy, mode),
             profile=career_profile, preferences=preferences, candidate=candidate,
             taxonomy=taxonomy, evidence_index=evidence_index,
         )

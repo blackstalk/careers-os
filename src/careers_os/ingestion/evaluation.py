@@ -83,7 +83,7 @@ def evaluate_opportunity(
     scope = classify_scope(job.title, job.description, taxonomy)
     freshness = assess_freshness(job.posted_at, preferences.freshness_thresholds)
     work_style = classify_work_style(job.description)
-    career_track = classify_career_track(job.title, detail)
+    career_track = classify_career_track(job.title, detail, job.description)
     pursue = compute_pursue_recommendation(
         eligibility, qualification, immediate, direction, opportunity_cost,
         work_style=work_style,

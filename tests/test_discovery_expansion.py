@@ -2,7 +2,7 @@
 cross-source duplicate handling, and per-source funnel reporting, run
 through the real `run_scheduled_pipeline`."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -273,3 +273,32 @@ class TestDedupPrefilterAndScoreCache:
         run_discovery(JobRepository(db_session), [("ashby", FakeSource("ashby", [{"id": "1", "title": "Lead Solutions Architect"}]))],
                       profiles, use_ai=False, evidence_index=evidence_index)
         assert len(calls) == 1
+
+
+class TestPhase44Ranking:
+    """Stale postings ranked alongside fresh ones for the same alert budget."""
+
+    def test_stale_postings_rank_below_equivalent_fresh_ones(self):
+        from careers_os.career.discovery_ranking import apply_freshness_penalty
+        from careers_os.domain.opportunity_decision import Freshness
+
+        assert apply_freshness_penalty(0.9, Freshness.STALE) < 0.9
+        for level in (Freshness.FRESH, Freshness.RECENT, Freshness.AGING, Freshness.UNKNOWN):
+            assert apply_freshness_penalty(0.9, level) == 0.9
+
+    def test_a_stale_job_is_outranked_in_a_real_run(self, db_session, evidence_index):
+        old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+        catalog = [
+            {"id": "fresh", "title": "Lead Solutions Architect", "company": "Fresh Co"},
+            {"id": "stale", "title": "Lead Solutions Architect", "company": "Stale Co", "posted_at": old},
+        ]
+        result = _run(db_session, evidence_index, [("ashby", StaleAwareSource("ashby", catalog))])
+        ordered = [a.opportunity.job.company for a in result.alerts]
+        assert ordered.index("Fresh Co") < ordered.index("Stale Co")
+
+
+class StaleAwareSource(FakeSource):
+    def normalize(self, raw):
+        job = super().normalize(raw)
+        posted = raw.raw_payload.get("posted_at")
+        return job.model_copy(update={"posted_at": datetime.fromisoformat(posted)}) if posted else job

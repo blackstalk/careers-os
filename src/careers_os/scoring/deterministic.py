@@ -180,8 +180,36 @@ def score_career_direction_fit(
     )
 
 
+def _annual_component(figure: float, comp, *, confidence: float, note: str = "") -> FitComponent:
+    if figure >= comp.full_time.strong_annual:
+        score = 1.0
+    elif figure >= comp.full_time.minimum_annual:
+        span = comp.full_time.strong_annual - comp.full_time.minimum_annual
+        score = 0.6 + 0.4 * ((figure - comp.full_time.minimum_annual) / span if span else 1)
+    else:
+        score = max(0.0, 0.6 * (figure / comp.full_time.minimum_annual))
+    return FitComponent(
+        score=round(score, 3),
+        reason=f"Published salary (~${figure:,.0f}) compared against target range "
+        f"(${comp.full_time.minimum_annual:,.0f} min / ${comp.full_time.strong_annual:,.0f} strong).{note}",
+        evidence=[f"annual={figure}"],
+        confidence=confidence,
+    )
+
+
 def score_compensation_fit(job: NormalizedJob, preferences: Preferences) -> FitComponent:
     comp = preferences.compensation
+
+    # A board that doesn't report employment type (Greenhouse) still
+    # publishes salary — compare it rather than reporting "not published"
+    # next to a visible range (Phase 4.4).
+    if job.employment_type not in (EmploymentType.FULL_TIME, EmploymentType.CONTRACT, EmploymentType.FREELANCE):
+        figure = job.salary_max or job.salary_min
+        if figure is not None:
+            return _annual_component(
+                figure, comp, confidence=0.7,
+                note=" Employment type isn't stated by the source; treated as an annual salary.",
+            )
 
     if job.employment_type == EmploymentType.FULL_TIME:
         if job.salary_min is None and job.salary_max is None:
@@ -194,20 +222,7 @@ def score_compensation_fit(job: NormalizedJob, preferences: Preferences) -> FitC
                 confidence=0.15,
             )
         figure = job.salary_max or job.salary_min
-        if figure >= comp.full_time.strong_annual:
-            score = 1.0
-        elif figure >= comp.full_time.minimum_annual:
-            span = comp.full_time.strong_annual - comp.full_time.minimum_annual
-            score = 0.6 + 0.4 * ((figure - comp.full_time.minimum_annual) / span if span else 1)
-        else:
-            score = max(0.0, 0.6 * (figure / comp.full_time.minimum_annual))
-        return FitComponent(
-            score=round(score, 3),
-            reason=f"Published salary (~${figure:,.0f}) compared against target range "
-            f"(${comp.full_time.minimum_annual:,.0f} min / ${comp.full_time.strong_annual:,.0f} strong).",
-            evidence=[f"salary_max={job.salary_max}", f"salary_min={job.salary_min}"],
-            confidence=0.85,
-        )
+        return _annual_component(figure, comp, confidence=0.85)
 
     if job.employment_type in (EmploymentType.CONTRACT, EmploymentType.FREELANCE):
         if job.hourly_min is None and job.hourly_max is None:

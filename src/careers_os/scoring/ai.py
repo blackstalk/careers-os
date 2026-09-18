@@ -27,7 +27,7 @@ MODEL = "claude-sonnet-5"
 # Part of the stored-review cache key (storage AIRefinementRecord): bump
 # whenever the prompt or its inputs change meaning, so old reviews are
 # not reused for a different question.
-PROMPT_VERSION = "finalist-review-v2"
+PROMPT_VERSION = "finalist-review-v3"
 
 _PROMPT_TEMPLATE = """\
 You are the final reviewer for a job-fit system. A deterministic filter \
@@ -48,6 +48,10 @@ Target roles: {target_roles}
 Job title: {title}
 Job description:
 {description}
+
+The deterministic matcher found the candidate has real evidence for these \
+requirements of this posting: {matched}. Judge the role, not the resume — \
+but do not treat something in that list as a gap.
 
 Respond with ONLY a JSON object of this exact shape, no prose outside it:
 {{
@@ -76,7 +80,7 @@ def readiness() -> tuple[bool, str]:
     return True, "ready"
 
 
-def evaluate(job: NormalizedJob, profile: CareerProfile) -> Optional[dict]:
+def evaluate(job: NormalizedJob, profile: CareerProfile, matched: str = "") -> Optional[dict]:
     """Return a raw dict of AI-derived fields, or None if unavailable/failed."""
     if not is_available():
         return None
@@ -95,6 +99,7 @@ def evaluate(job: NormalizedJob, profile: CareerProfile) -> Optional[dict]:
         target_roles=", ".join(profile.target_roles),
         title=job.title,
         description=job.description[:4000],
+        matched=matched or "(none recorded)",
     )
 
     try:
@@ -144,9 +149,13 @@ def apply_ai_evaluation(result: CareerFitResult, ai_result: dict) -> CareerFitRe
             # must never raise a score above what that evidence supports.
             deterministic_score = updated.career_direction_fit.score
             if ai_score < deterministic_score:
+                # Only call it "lowered" when the AI materially disagreed —
+                # 0.85 against a deterministic 1.0 is agreement, and saying
+                # otherwise misreads the alert (Phase 4.4).
+                verb = "AI review lowered this" if deterministic_score - ai_score >= 0.1 else "AI review"
                 updated.career_direction_fit = FitComponent(
                     score=ai_score,
-                    reason=f"{updated.career_direction_fit.reason} AI review lowered this: {ai_reason}",
+                    reason=f"{updated.career_direction_fit.reason} {verb}: {ai_reason}",
                     evidence=updated.career_direction_fit.evidence,
                     confidence=updated.career_direction_fit.confidence,
                 )
