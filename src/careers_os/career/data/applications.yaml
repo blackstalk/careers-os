@@ -13,3 +13,14 @@ applications:
   status: applied
   url: https://himalayas.app/companies/sentinelone/jobs/staff-forward-deployed-engineer-ai-764587719
   date: '2026-09-18'
+- company: GitLab
+  title: Staff Engineer, People Technology
+  status: not_interested
+  url: https://job-boards.greenhouse.io/gitlab/jobs/8638295002
+  date: '2026-09-18'
+  note: People/HR systems specialization (Workday/Workato); wrong career direction
+- company: Natera
+  title: Senior Generative AI Engineer
+  status: applied
+  url: https://himalayas.app/companies/natera/jobs/senior-generative-ai-engineer
+  date: '2026-09-18'
