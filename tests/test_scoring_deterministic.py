@@ -169,9 +169,12 @@ class TestCompensationFit:
 
     def test_salary_below_minimum_scores_low_but_not_zero_penalty_free(self):
         prefs = Preferences.load()
-        job = _job(employment_type=EmploymentType.FULL_TIME, salary_min=100000, salary_max=120000)
+        # Derived from the configured floor so retuning preferences.yaml
+        # can't turn this into a false failure (Phase 4.4: the floor moved).
+        below = prefs.compensation.full_time.minimum_annual * 0.8
+        job = _job(employment_type=EmploymentType.FULL_TIME, salary_min=below * 0.9, salary_max=below)
         result = deterministic.score_compensation_fit(job, prefs)
-        assert 0.0 <= result.score < 0.6
+        assert 0.0 < result.score < 0.6
 
     def test_hourly_does_not_get_compared_against_salary_thresholds(self):
         prefs = Preferences.load()
