@@ -14,3 +14,11 @@ accounts:
   - huggingface
   - tighten
   - 10up
+  # Phase 6: verified live 2026-10-07 — the account name Workable returns
+  # is "RevStar", confirming the board belongs to the company Himalayas
+  # was re-listing (5 of its ~28 distinct roles). A US consultancy
+  # posting both replacement-track work (Full Stack Web Developer,
+  # Software Development Lead) and exploratory-track work (Forward
+  # Deployed Engineer for AWS/Databricks/DevOps, Solutions Architect) —
+  # the only verified board in the Phase 6 investigation covering both.
+  - revstar

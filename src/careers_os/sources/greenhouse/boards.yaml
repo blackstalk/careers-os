@@ -21,3 +21,8 @@ boards:
   - launchdarkly
   - samsara
   - fivetran
+  # Phase 6: verified live 2026-10-07 — the Greenhouse board API returns
+  # name "Upstart", and 84 of its 91 postings are remote-US, the highest
+  # remote-US density of any board verified in the investigation.
+  # Himalayas was re-listing 7 of its 23 stack-relevant roles.
+  - upstart

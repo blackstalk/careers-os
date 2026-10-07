@@ -224,3 +224,161 @@ agencies and product companies with supported ATS boards, checked slug by
 slug against the adapters before being committed. Until then the
 replacement track depends mostly on Himalayas keyword search and manual
 postings.
+
+
+## Phase 6: replacement-track source coverage
+
+Two paths were investigated, neither of them by scraping a job board:
+
+- **Path A** — mine the stack-profile jobs already in the database and
+  resolve their employers' ATS destinations from stored URLs and
+  payloads. This established one hard fact: Himalayas raw payloads carry
+  no ATS link at all (`applicationLink` points back to the Himalayas
+  page), so an employer discovered through the aggregator gives no free
+  route to its own board. Every board below had to be established from
+  public evidence instead.
+- **Path B** — the public Craft CMS and Laravel partner directories used
+  strictly as *company-discovery* sources, never as job sources. Appearing
+  in a directory earned a company nothing; it still had to have a
+  verifiable board on a supported ATS and useful remote-US engineering
+  coverage.
+
+### Verification method, and a false-positive trap
+
+Slugs were never guessed. Each candidate was queried against the ATS's
+own public API, and **the ATS had to confirm the board's owner**:
+Greenhouse (`/v1/boards/<slug>` returns `name`) and Workable
+(`widget/accounts/<slug>` returns `name`) both do, and that name had to
+share a distinctive token with the candidate or the hit was discarded.
+
+This matters because the first probe pass truncated company names to
+their first word and produced entirely bogus matches: `block` → Block
+Inc, `pine` → Pine, `mighty` → Mighty (legal tech), `iris` → Iris North
+America, `apex` → Apex Eye, `paradigm` → Paradigm. `64robots` likewise
+resolves to an unrelated Workable account ("Doğanlı Teknoloji"). None of
+those are real coverage. Greenhouse 404s an unknown board, but Workable
+answers 200 for an account that exists with zero postings, so
+"responded" alone is never evidence of identity.
+
+### Added (verified live 2026-10-07)
+
+| Employer | ATS | Slug | Total | Remote | Remote-US | Relevant eng | Compensation | Already via Himalayas | Why |
+|---|---|---|---|---|---|---|---|---|---|
+| RevStar | Workable | `revstar` | 84 (46 US) | all flagged remote | 46 US | 2 stack + 4 FDE/SA distinct | none published | 5 jobs | Only verified board covering both tracks: Full Stack Web Developer and Software Development Lead alongside Forward Deployed Engineer (AWS/Databricks/DevOps) and Solutions Architect |
+| Upstart | Greenhouse | `upstart` | 90 | 84 | 84 | 25 | **25 of 25 relevant roles carry a structured range; 24 have a minimum at or above $120,000** | 7 jobs | Highest remote-US density verified, and complete compensation on every relevant engineering role — the opposite of the Coinbase case |
+
+### Rejected, with reasons
+
+| Employer | Status | Why not |
+|---|---|---|
+| **Coinbase** | greenhouse `coinbase` verified: 225 jobs, 135 remote-US, 62 relevant | **Adding it would lose information.** Coinbase's own Greenhouse postings publish no pay; the Himalayas copies carry `$186,065-$218,900`. Because the aggregator copy is superseded when an employer copy is found in the same run (`ingestion/scheduled_run.py`), those roles would drop from `confirmed_above` to `unknown` — out of the confirmed alert lane and into the budget-1 verification lane. A larger inventory bought with worse compensation data is a net loss against the replacement objective |
+| JFrog | greenhouse `jfrog` verified: 66 jobs | Only 7 remote / 6 remote-US and 2 relevant; already present via Himalayas |
+| Mission Lane | greenhouse `missionlane` verified: 16 jobs, all remote | Zero stack-relevant engineering roles |
+| lemon.io | ashby `lemon-io` verified: 4 jobs | A freelancer marketplace: its own ATS lists Head of Engineering, BDR, AE. Its developer work never reaches its board |
+| Curotec, Tarteel AI, First Due, Happy Cog, SunnyByte, Foster Commerce, Click Rain, Sourcetoad, Kirschbaum, exolnet, SimplyPHP, Pixel & Tonic, nystudio107, Oomph, Lullabot, Four Kitchens, Postlight, Catalyst Mobility, DecisionPoint, Peloton, and 9 more | No board on any supported ATS | 29 candidates have no Greenhouse/Ashby/Lever/Workable presence. Happy Cog and Curotec post on their own sites, which is why Himalayas is the only way they reach CareersOS. Nothing to add without an unsupported adapter |
+
+### Dormant stack employers: verified boards, zero openings
+
+The most useful Path B result is a negative one. These Craft/Laravel
+agencies have **verified, live Workable accounts that were serving zero
+open postings** on 2026-10-07:
+
+Vehikl, Threadable, Brilliance, Crowd Favorite, Thunk, Bluehouse Group,
+Steadfast Collective, Viget, Bonfire, Barrel, Supercool, Mindsize,
+Fortnight, Elevated Third, Fuzzy Math, Big Cartel, Chromatic, Matrix
+Internet, Rareloop, Simple, GoodWork — plus Order.co, Clera, Lumen
+Technologies, Peraton and Toptal from Path A, and `tighten` which was
+already configured.
+
+The Craft/Laravel agency ecosystem is therefore real and reachable, but
+not hiring. **None were added**: 27 boards would cost 27 requests on
+every scheduled run to contribute zero opportunities — the same pattern
+`sources/workable/accounts.yaml` already records for `tighten` and
+`10up`. The list is preserved here as research so these employers can be
+revisited without re-running the investigation. See the backlog note on
+dormant stack-employer monitoring below.
+
+### Configured-ATS share is not a quality metric
+
+Phase 6 was planned on the assumption that employer ATS copies are
+richer than aggregator copies and that raising the configured-ATS share
+of stack-profile jobs (then ~26%) toward something like 50% would mean
+better coverage. **The live evidence contradicted that, so the goal was
+dropped.** Measured on one production-equivalent run:
+
+| Source | Jobs | needs_verification | immediate_fit | pursue or better |
+|---|---|---|---|---|
+| himalayas | 549 | 50% | 68 | 213 |
+| greenhouse | 576 | 61% | 30 | 47 |
+| ashby | 591 | 32% | 14 | 39 |
+
+Himalayas produced more `immediate_fit` and more `pursue`-or-better
+opportunities than both configured ATS sources combined, and parsed
+*better* than Greenhouse. Coinbase is the sharpest case: the aggregator
+preserves compensation the employer's own board omits.
+
+Compensation completeness varies by *employer*, not by source category —
+which is the point. On the same ATS, Coinbase publishes no pay at all
+while Upstart publishes a structured range on every relevant engineering
+role. A board is worth adding when that employer's own postings are
+good, never because adding boards raises a share. Share of jobs
+coming from configured boards measures configuration, not opportunity
+quality, and optimizing it would have argued for adding Coinbase — the
+one decision the evidence most clearly rejects.
+
+The metrics that actually bear on source value:
+
+- credible replacement opportunities discovered;
+- `immediate_fit` count;
+- confirmed and verification alert candidates;
+- unique relevant opportunities contributed by each source (jobs no
+  other source found);
+- compensation completeness;
+- duplicate versus incremental coverage;
+- request cost per useful opportunity produced.
+
+`jobs run` already prints most of these per source (see "Scaling fixes
+that came with more volume" above).
+
+Where coverage genuinely is thin is the core stack: only **18%** of
+Craft/PHP/Laravel/WordPress jobs come from a configured ATS (105 of 128
+are Himalayas). Phase 6 established that this is not a discovery failure
+— those agencies have verifiable boards and simply are not hiring. Note
+also that 110 of the 549 Himalayas stack jobs come from staffing and
+outsourcing reposters (Bright Vision, NightOwl, Xperteez, Hivex,
+PradeepIT, Lifelancer), so part of that volume is low quality.
+
+## Backlog (not implemented)
+
+### Cross-source field provenance / enrichment
+
+`sources/authority.py` plus the supersession step in
+`ingestion/scheduled_run.py` currently make an all-or-nothing choice: when
+the employer's own posting is found, the aggregator copy is dropped from
+alert consideration entirely. Coinbase shows the cost — the discarded copy
+may hold the only compensation data for that job.
+
+A canonical employer copy should eventually be able to coexist with
+useful fields from an aggregator copy (compensation first, possibly
+location restrictions) without merging records or losing provenance: the
+employer copy stays authoritative for the posting, while a per-field
+record of where each value came from allows a richer aggregator field to
+fill a gap the employer copy leaves empty. Records must still never be
+silently merged, and a field taken from an aggregator must remain
+visibly attributed to it so compensation certainty
+(`domain/compensation.py`) can weigh it accordingly.
+
+### Dormant stack-employer monitoring
+
+The Phase 6 investigation produced a verified set of Craft/Laravel
+agencies with supported ATS accounts and no current openings (listed
+above). Querying all of them on every scheduled run is the wrong trade:
+27 extra requests per weekday for zero opportunities.
+
+Worth considering later: a cheaper periodic mechanism — a separate
+low-frequency check (weekly, or its own workflow) that asks only whether
+any dormant board has become non-empty, and promotes an employer into the
+normal source list when it starts hiring. Needs a decision on where that
+list lives (a `dormant:` section in the existing accounts config versus a
+separate file) and on how a promotion gets reviewed rather than applied
+automatically.
