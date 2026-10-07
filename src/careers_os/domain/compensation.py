@@ -16,6 +16,16 @@ Sources do not publish a compensation basis, so when the posting's own
 text frames the figure as OTE, total compensation, or a package
 including bonus or equity, the basis is recorded as uncertain rather
 than silently assumed to be base.
+
+Phase 7 narrows *where* that framing is read from. Basis is a property of
+a particular number, not of the whole document: a posting can say
+"Anticipated Base Salary Range $142,000 - $196,600" and later add "your
+base pay is one part of your total compensation package", and the range
+is still base salary. Scanning the entire description for phrases like
+"total compensation" turned that boilerplate into uncertainty. The basis
+is now resolved from the language adjacent to each published figure (see
+`scoring/deterministic.py`), with the document-wide scan kept only as the
+fallback for figures that carry no label of their own.
 """
 
 from enum import Enum
@@ -63,6 +73,11 @@ class CompensationAssessment(BaseModel):
     high: Optional[float] = None
     reason: str = ""
     signals: list[str] = Field(default_factory=list)  # phrases that made the basis uncertain
+    # Phase 7: the wording *next to the published range* that established
+    # it as base salary, e.g. "anticipated base salary range". Recorded so
+    # a confirmation can be audited back to the posting's own language
+    # rather than taken on trust.
+    basis_evidence: list[str] = Field(default_factory=list)
 
     @property
     def confirmed(self) -> bool:

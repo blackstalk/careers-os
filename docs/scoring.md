@@ -83,7 +83,7 @@ answers that separately (`domain/compensation.py`):
 | $100K-$130K | `overlaps_threshold` — the maximum clears the floor, an offer at the bottom would not |
 | $90K-$115K | `below_threshold` |
 | nothing | `unknown` |
-| any figure framed as OTE / total comp / "base + bonus" | `basis_uncertain` |
+| a figure labelled OTE / total comp / "base + bonus" where it appears | `basis_uncertain` (see Phase 7 below) |
 | contract hourly | `non_salary`, judged against the unchanged hourly targets |
 
 A range only confirms the floor when its **minimum** clears it, and the
@@ -92,6 +92,57 @@ score itself is now computed from the bottom of the range. Before this,
 a confirmed match. `overlaps_threshold`, `basis_uncertain` and `unknown`
 all route to readiness `needs_verification`: discoverable and alertable
 through a separate small budget, never described as confirmed.
+
+### Compensation basis is read next to the figure (Phase 7)
+
+Basis is a property of a particular number, not of the whole posting.
+Phase 5 answered "is this base salary?" by scanning the entire
+description for phrases like `total compensation`, which produced a large
+false-uncertainty population: a posting could say
+
+> United States | Remote - Anticipated Base Salary Range $142,000 — $196,600 USD
+
+and then add the standard clarifying sentence
+
+> your base pay is one part of your total compensation package
+
+and the explicitly labelled base range became `basis_uncertain`. Measured
+on one production-equivalent run, **70 of 77** replacement-track
+`basis_uncertain` jobs had explicit base-salary language adjacent to the
+range.
+
+`assess_compensation` now resolves basis from the label nearest each
+published figure (`_resolve_local_basis`), because that is what decides
+what the number represents:
+
+- labels are matched in a bounded window before the figure, where they
+  normally sit, longest-first so `base salary range` wins over the
+  generic `salary range`;
+- a qualifier that trails the figure counts only while it is still in the
+  same sentence — `$100,000-$125,000 base plus bonus` qualifies the
+  range, while `$160k. Total rewards include equity.` is separate prose;
+- a base label inside an additive expression describes the sum, not the
+  base: `(base salary + on-target incentives) ... $165,000 - $180,000`
+  stays uncertain;
+- if any occurrence of the range reads as non-base, the whole assessment
+  does;
+- only labels that say **base** outright override document-level
+  framing. The generic `salary range` / `annual salary` do not, because
+  postings use them loosely — Anthropic publishes `Annual Salary:
+  $270,000 — $290,000` for a range it elsewhere states "includes both the
+  sales commissions/sales bonuses target and annual base salary", and
+  that must not read as confirmed base;
+- a figure carrying no label of its own falls back to the Phase 5
+  document-wide scan, so nothing became more permissive by default.
+
+Every Phase 5 rule is unchanged: the **minimum** still has to clear the
+floor (`Base Pay Range $102,000 - $184,300` is base salary *and*
+`overlaps_threshold`), unpublished pay is still `unknown`, OTE and total
+compensation still cannot satisfy the base floor, contract/hourly is
+still judged separately, and no figure is ever converted or guessed at.
+When local evidence does establish base salary, the wording responsible
+is recorded in `CompensationAssessment.basis_evidence` so a confirmation
+can be audited back to the posting's own language.
 
 Compensation is compared whenever a figure is published, even when the
 source doesn't report an employment type (Greenhouse never does) — before

@@ -368,6 +368,53 @@ silently merged, and a field taken from an aggregator must remain
 visibly attributed to it so compensation certainty
 (`domain/compensation.py`) can weigh it accordingly.
 
+### Employer-name normalization across sources
+
+Himalayas spells one employer `Rev Star`, its own Workable board spells it
+`RevStar`. The normalization behind duplicate detection and alert
+clustering only lowercases and collapses whitespace, so the two are
+different employers: four genuinely duplicated roles (Databricks FDE,
+DevOps FDE, FDE AWS, Full Stack Web Developer) were stored and evaluated
+twice in the Phase 6 validation run, with `duplicate_job_ids` linking
+none of them. Upstart proves the mechanism works when the spellings
+match — its `Software Engineer, Borrower Experience` linked
+greenhouse↔himalayas correctly. Needs care rather than aggressive
+squashing: collapsing all whitespace would also merge genuinely distinct
+employers whose names differ only by spacing.
+
+### Workable city-level duplicate postings
+
+Workable lists the same role once per city, each with its own
+`source_job_id`, so RevStar's ~9 distinct roles arrived as 14 records
+(3× Data & AI Engineer, 2× each Databricks FDE / FDE AWS / Full Stack Web
+Developer). These are not cross-source duplicates and the existing scan
+correctly leaves them alone; what they inflate is per-source counts and,
+potentially, alert budget. The notification clustering in
+`notifications/clustering.py` already groups a title family across
+locations and is the natural place to look first.
+
+### Generic "Software Engineer" discovery
+
+`career/data/search_profiles.yaml` deliberately excludes "Software
+Engineer" from the replacement profiles as too noisy, with a note to
+revisit "once production coverage is measured". It now has been: Upstart
+contributed only 9 of its 25 relevant engineering roles because its
+titles are the generic `Senior/Principal Software Engineer`. Worth
+revisiting as its own change, with before/after precision measured — the
+original noise concern was real.
+
+### Multi-zone compensation postings
+
+Toast publishes per-geography ranges (`Zone A $128,000—$205,000`,
+`Zone B $111,000—$178,000`, `Zone C $100,000—$160,000`) and the text
+extractor collapses them into a single `$100,000-$205,000`, pairing the
+lowest zone's minimum with the highest zone's maximum. Phase 7 leaves
+these `basis_uncertain` (no label resolves next to the merged figure),
+which is the safe outcome but not an accurate one. A correct fix belongs
+with range extraction, not basis resolution: recognize that several
+ranges were published and either keep them separately or decline to
+publish a single merged range.
+
 ### Dormant stack-employer monitoring
 
 The Phase 6 investigation produced a verified set of Craft/Laravel

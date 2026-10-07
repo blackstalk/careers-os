@@ -195,6 +195,113 @@ def _basis_signals(job: NormalizedJob) -> list[str]:
     return [p for p in _NON_BASE_PHRASES if re.search(r"(?<![a-z])" + re.escape(p) + r"(?![a-z])", text)]
 
 
+# --- Phase 7: basis resolved from the language next to the figure -------
+#
+# A posting's compensation basis belongs to a specific number, not to the
+# document. `_basis_signals` above reads the whole description, so one
+# sentence of "total compensation" boilerplate was enough to make an
+# explicitly labelled base-salary range uncertain. These labels are
+# matched only against the text immediately around each published figure.
+#
+# Ordered longest-first so "base salary range" wins over "salary range".
+
+# Labels that name the figure as base salary. "Strong" ones say "base"
+# outright and are trusted over distant boilerplate; the generic ones
+# ("salary range", "annual salary") are not, because plenty of postings
+# use them loosely for a total-compensation number.
+_STRONG_BASE_LABELS = (
+    "anticipated base salary range", "anticipated base salary", "annual base salary range",
+    "annual base salary", "base salary pay range", "base salary range", "base pay range",
+    "annual base pay", "base compensation", "base salary", "base pay",
+)
+_GENERIC_SALARY_LABELS = ("annual salary range", "annual salary", "salary range", "pay range")
+# Labels that name the figure as something other than base salary.
+_LOCAL_NON_BASE_LABELS = (
+    "total cash compensation", "on-target earnings", "on target earnings", "on-target incentives",
+    "on target incentives", "total compensation", "target compensation", "total rewards",
+    "total comp", "total package", "base plus bonus", "base + bonus", "earning potential",
+    "uncapped commission", "ote",
+)
+# "base salary + on-target incentives" is a sum, not a base figure, so a
+# base label immediately followed by an additive term is not base.
+_COMPOSITE_SUFFIX = re.compile(
+    r"\s*(?:\+|plus|and)\s+(?:[a-z\- ]{0,24})?"
+    r"(?:bonus|bonuses|incentive|incentives|commission|commissions|equity|rsus?)"
+)
+_LOOKBACK_CHARS = 140   # how far before a figure a label can sit
+_LOOKAHEAD_CHARS = 40   # a qualifier can also trail the figure ("$100k base plus bonus")
+
+
+def _figure_tokens(value: float) -> list[str]:
+    """The ways a posting might spell a parsed figure."""
+    whole = int(round(value))
+    tokens = [f"{whole:,}", str(whole)]
+    if whole >= 1000:
+        tokens.append(f"{whole / 1000:g}k")
+    return tokens
+
+
+def _nearest_label(text: str, start: int, end: int) -> Optional[tuple[int, str, str]]:
+    """(distance, kind, label) for the label closest to one figure.
+
+    Looks backward from the figure, where labels normally sit, and also a
+    short way forward to catch a trailing qualifier.
+    """
+    best: Optional[tuple[int, str, str]] = None
+    before = text[max(0, start - _LOOKBACK_CHARS):start]
+    for kind, labels in (("strong_base", _STRONG_BASE_LABELS),
+                         ("generic", _GENERIC_SALARY_LABELS),
+                         ("non_base", _LOCAL_NON_BASE_LABELS)):
+        for label in labels:
+            for match in re.finditer(r"(?<![a-z])" + re.escape(label) + r"(?![a-z])", before):
+                # A base label that is part of a sum describes the sum.
+                effective = kind
+                if kind in ("strong_base", "generic") and _COMPOSITE_SUFFIX.match(before[match.end():]):
+                    effective = "non_base"
+                    label = f"{label} (part of a sum)"
+                distance = len(before) - match.end()
+                if best is None or distance < best[0]:
+                    best = (distance, effective, label)
+    # A trailing qualifier only counts while it is still part of the same
+    # sentence as the figure ("$100,000-$125,000 base plus bonus"). Once a
+    # sentence ends, what follows is separate prose about the package.
+    after = re.split(r"[.;\n]", text[end:end + _LOOKAHEAD_CHARS], maxsplit=1)[0]
+    for label in _LOCAL_NON_BASE_LABELS:
+        for match in re.finditer(r"(?<![a-z])" + re.escape(label) + r"(?![a-z])", after):
+            if best is None or match.start() < best[0]:
+                best = (match.start(), "non_base", label)
+    return best
+
+
+def _resolve_local_basis(job: NormalizedJob) -> tuple[str, list[str]]:
+    """What the published figures are called where they appear.
+
+    Returns one of "non_base", "strong_base", "generic" or "none", with
+    the labels that decided it. Conservative on disagreement: if any
+    occurrence of the range reads as non-base, the whole assessment does.
+    """
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", job.description or "")).lower()
+    if not text:
+        return "none", []
+
+    verdicts: list[tuple[int, str, str]] = []
+    for value in (v for v in (job.salary_min, job.salary_max) if v is not None):
+        for token in _figure_tokens(value):
+            for match in re.finditer(re.escape(token.lower()), text):
+                found = _nearest_label(text, match.start(), match.end())
+                if found:
+                    verdicts.append(found)
+    if not verdicts:
+        return "none", []
+
+    kinds = {kind for _d, kind, _l in verdicts}
+    if "non_base" in kinds:
+        return "non_base", sorted({label for _d, kind, label in verdicts if kind == "non_base"})
+    if "strong_base" in kinds:
+        return "strong_base", sorted({label for _d, kind, label in verdicts if kind == "strong_base"})
+    return "generic", sorted({label for _d, _k, label in verdicts})
+
+
 def assess_compensation(job: NormalizedJob, preferences: Preferences) -> CompensationAssessment:
     """Does this posting confirm pay at or above the configured base
     floor? Deliberately conservative: a range only confirms the floor
@@ -216,18 +323,37 @@ def assess_compensation(job: NormalizedJob, preferences: Preferences) -> Compens
             reason="No salary published; clearing the base-salary floor is unverified, not failed.",
         )
 
-    signals = _basis_signals(job)
-    if signals:
+    # Phase 7: what the posting calls *this* figure decides the basis.
+    # The document-wide scan is only consulted when the figure carries no
+    # label of its own, so boilerplate can no longer override an
+    # explicitly labelled base-salary range.
+    local_kind, local_labels = _resolve_local_basis(job)
+    basis_evidence: list[str] = []
+
+    if local_kind == "non_base":
         return CompensationAssessment(
             status=CompensationStatus.BASIS_UNCERTAIN, basis=CompensationBasis.UNCERTAIN,
-            floor=floor, low=low, high=high, signals=signals,
-            reason=f"A figure is published, but the posting frames compensation as {signals[0]!r}; "
-            "base salary is not established.",
+            floor=floor, low=low, high=high, signals=local_labels,
+            reason=f"The published figure is labelled {local_labels[0]!r} where it appears, "
+            "so it does not establish annual base salary.",
         )
+
+    if local_kind == "strong_base":
+        basis_evidence = local_labels
+    else:
+        signals = _basis_signals(job)
+        if signals:
+            return CompensationAssessment(
+                status=CompensationStatus.BASIS_UNCERTAIN, basis=CompensationBasis.UNCERTAIN,
+                floor=floor, low=low, high=high, signals=signals,
+                reason=f"A figure is published, but the posting frames compensation as {signals[0]!r}; "
+                "base salary is not established.",
+            )
 
     bottom = low if low is not None else high
     top = high if high is not None else low
-    assessment = dict(basis=CompensationBasis.BASE_SALARY, floor=floor, low=low, high=high)
+    assessment = dict(basis=CompensationBasis.BASE_SALARY, floor=floor, low=low, high=high,
+                      basis_evidence=basis_evidence)
 
     if top < floor:
         return CompensationAssessment(

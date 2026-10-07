@@ -377,3 +377,135 @@ class TestCompensationCertainty:
         comp = score_compensation_fit(
             self._job(employment_type=EmploymentType.CONTRACT, hourly_min=95, hourly_max=120), Preferences.load())
         assert comp.score >= 0.8 and "hourly rate" in comp.reason
+
+
+class TestCompensationBasisIsRangeLocal:
+    """Phase 7: basis belongs to a figure, not to the document.
+
+    A posting that labels its range "Anticipated Base Salary Range" and
+    later mentions total compensation is publishing a base salary. The
+    Phase 5 implementation scanned the whole description, so that
+    boilerplate made 70 of 77 explicitly-labelled base ranges uncertain.
+    """
+
+    def _assess(self, description, **kw):
+        from careers_os.career.preferences import Preferences
+        from careers_os.domain.enums import EmploymentType
+        from careers_os.scoring.deterministic import assess_compensation
+        kw.setdefault("employment_type", EmploymentType.FULL_TIME)
+        job = NormalizedJob(
+            source="t", source_job_id="1", source_url="https://e.com/1", title="Full Stack Engineer",
+            description=description, retrieved_at=datetime.now(timezone.utc), **kw,
+        )
+        return assess_compensation(job, Preferences.load())
+
+    def test_1_explicit_base_salary_range_is_confirmed_base(self):
+        from careers_os.domain.compensation import CompensationBasis, CompensationStatus
+        a = self._assess("Base Salary Range $130,000 - $160,000 USD.",
+                         salary_min=130000, salary_max=160000)
+        assert a.status == CompensationStatus.CONFIRMED_ABOVE
+        assert a.basis == CompensationBasis.BASE_SALARY
+        assert any("base salary" in e for e in a.basis_evidence)
+
+    def test_2_base_range_survives_later_total_compensation_boilerplate(self):
+        """Upstart's real shape: the exact false uncertainty Phase 7 fixes."""
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(
+            "United States | Remote - Anticipated Base Salary Range $142,000 - $196,600 USD. "
+            "At Upstart, your base pay is one part of your total compensation package. The anticipated "
+            "base salary for this position is expected to be within the below range. In addition, Upstart "
+            "provides employees with target bonuses, equity compensation, and generous benefits packages.",
+            salary_min=142000, salary_max=196600)
+        assert a.status == CompensationStatus.CONFIRMED_ABOVE and a.confirmed
+
+    def test_3_base_range_straddling_the_floor_still_overlaps(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess("The base salary range for this role is $100,000 - $130,000.",
+                         salary_min=100000, salary_max=130000)
+        assert a.status == CompensationStatus.OVERLAPS_THRESHOLD and not a.confirmed
+
+    def test_4_ote_range_is_not_confirmed_base(self):
+        from careers_os.domain.compensation import CompensationBasis, CompensationStatus
+        a = self._assess("OTE $150,000 - $200,000 for this territory.",
+                         salary_min=150000, salary_max=200000)
+        assert a.status == CompensationStatus.BASIS_UNCERTAIN
+        assert a.basis == CompensationBasis.UNCERTAIN and not a.basis_evidence
+
+    def test_5_total_compensation_range_is_not_confirmed_base(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess("Expected total compensation range: $150,000 - $200,000.",
+                         salary_min=150000, salary_max=200000)
+        assert a.status == CompensationStatus.BASIS_UNCERTAIN and not a.confirmed
+
+    def test_6_figure_with_no_basis_language_stays_uncertain_by_fallback(self):
+        """No local label and no global phrase: Phase 5 called this base.
+        That behaviour is deliberately preserved rather than widened."""
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess("We pay $150,000 - $200,000 for this role.",
+                         salary_min=150000, salary_max=200000)
+        assert a.status == CompensationStatus.CONFIRMED_ABOVE
+        assert a.basis_evidence == []  # confirmed by the Phase 5 fallback, not by local evidence
+
+    def test_7_base_range_plus_separate_bonus_discussion_stays_confirmed(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(
+            "Base Salary Range $150,000 - $180,000. Employees are also eligible for an annual bonus, "
+            "equity in the form of RSUs, and a comprehensive benefits package including medical and 401k.",
+            salary_min=150000, salary_max=180000)
+        assert a.status == CompensationStatus.CONFIRMED_ABOVE and a.confirmed
+
+    def test_8_base_range_alongside_a_separate_ote_figure_uses_the_base_range(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(
+            "Base Salary Range $150,000 - $180,000 USD. With commission at target, OTE is $240,000.",
+            salary_min=150000, salary_max=180000)
+        assert a.status == CompensationStatus.CONFIRMED_ABOVE
+        assert any("base salary" in e for e in a.basis_evidence)
+
+    def test_9_a_sum_expressed_as_base_plus_incentives_is_not_base(self):
+        """Automation Anywhere's real wording: a base label inside an
+        additive expression describes the sum, not the base."""
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(
+            "The salary range or on-target earnings (base salary + on-target incentives) for this "
+            "position is $165,000 - $180,000 a year.",
+            salary_min=165000, salary_max=180000)
+        assert a.status == CompensationStatus.BASIS_UNCERTAIN and not a.confirmed
+
+    def test_10_trailing_qualifier_after_the_figure_is_honoured(self):
+        """Huntress's real wording puts the qualifier after the range."""
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess("Compensation Range: $130,000-$160,000 base plus bonus and equity.",
+                         salary_min=130000, salary_max=160000)
+        assert a.status == CompensationStatus.BASIS_UNCERTAIN and not a.confirmed
+
+    def test_11_missing_compensation_is_never_manufactured_into_confirmation(self):
+        """Coinbase-style: the employer's own posting publishes no figure."""
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(
+            "Base salary is reviewed annually and benchmarked against market data. We offer equity, "
+            "a target bonus, and a generous total rewards package.")
+        assert a.status == CompensationStatus.UNKNOWN and not a.confirmed
+        assert a.low is None and a.high is None
+
+    def test_generic_salary_label_does_not_override_global_non_base_language(self):
+        """"Salary range" is used loosely, so it is not strong enough to
+        beat document-level OTE/total-comp framing — only "base" is."""
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(
+            "Salary range $130,000 - $150,000. This reflects total compensation for the role.",
+            salary_min=130000, salary_max=150000)
+        assert a.status == CompensationStatus.BASIS_UNCERTAIN
+
+    def test_contract_hourly_is_unaffected_by_local_basis_parsing(self):
+        from careers_os.domain.compensation import CompensationBasis, CompensationStatus
+        from careers_os.domain.enums import EmploymentType
+        a = self._assess("Base salary range $130,000 - $160,000 for perm; contract rate applies here.",
+                         employment_type=EmploymentType.CONTRACT, hourly_min=95, hourly_max=120)
+        assert a.status == CompensationStatus.NON_SALARY and a.basis == CompensationBasis.HOURLY
+
+    def test_k_formatted_base_range_is_recognised(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess("Base salary range $130k-$160k. Total rewards include equity.",
+                         salary_min=130000, salary_max=160000)
+        assert a.status == CompensationStatus.CONFIRMED_ABOVE and a.confirmed
