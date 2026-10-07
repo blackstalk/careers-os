@@ -12,6 +12,7 @@ from typing import Optional
 from careers_os.career.bridge_role import BRIDGE_SIGNAL_CATEGORIES
 from careers_os.career.profile import CareerProfile
 from careers_os.career.preferences import Preferences
+from careers_os.domain.compensation import CompensationAssessment, CompensationBasis, CompensationStatus
 from careers_os.domain.enums import EmploymentType, RemoteStatus
 from careers_os.domain.experience import ExperienceFitDetail
 from careers_os.domain.job import NormalizedJob
@@ -180,6 +181,72 @@ def score_career_direction_fit(
     )
 
 
+# Phrases that mean a published figure may not be base salary. Matched
+# against the posting text near a compensation mention (Phase 5).
+_NON_BASE_PHRASES = (
+    "ote", "on-target earnings", "on target earnings", "total compensation", "total comp",
+    "total rewards", "base + bonus", "base plus bonus", "inclusive of bonus", "including bonus",
+    "including equity", "plus equity", "total package", "earning potential", "uncapped commission",
+)
+
+
+def _basis_signals(job: NormalizedJob) -> list[str]:
+    text = f"{job.title}\n{job.description or ''}".lower()
+    return [p for p in _NON_BASE_PHRASES if re.search(r"(?<![a-z])" + re.escape(p) + r"(?![a-z])", text)]
+
+
+def assess_compensation(job: NormalizedJob, preferences: Preferences) -> CompensationAssessment:
+    """Does this posting confirm pay at or above the configured base
+    floor? Deliberately conservative: a range only confirms the floor
+    when its *minimum* clears it. See domain/compensation.py."""
+    comp = preferences.compensation
+    floor = comp.full_time.minimum_annual
+
+    if job.employment_type in (EmploymentType.CONTRACT, EmploymentType.FREELANCE):
+        return CompensationAssessment(
+            status=CompensationStatus.NON_SALARY, basis=CompensationBasis.HOURLY,
+            low=job.hourly_min, high=job.hourly_max,
+            reason="Contract/freelance role, judged against the hourly targets rather than the salary floor.",
+        )
+
+    low, high = job.salary_min, job.salary_max
+    if low is None and high is None:
+        return CompensationAssessment(
+            status=CompensationStatus.UNKNOWN, floor=floor,
+            reason="No salary published; clearing the base-salary floor is unverified, not failed.",
+        )
+
+    signals = _basis_signals(job)
+    if signals:
+        return CompensationAssessment(
+            status=CompensationStatus.BASIS_UNCERTAIN, basis=CompensationBasis.UNCERTAIN,
+            floor=floor, low=low, high=high, signals=signals,
+            reason=f"A figure is published, but the posting frames compensation as {signals[0]!r}; "
+            "base salary is not established.",
+        )
+
+    bottom = low if low is not None else high
+    top = high if high is not None else low
+    assessment = dict(basis=CompensationBasis.BASE_SALARY, floor=floor, low=low, high=high)
+
+    if top < floor:
+        return CompensationAssessment(
+            status=CompensationStatus.BELOW_THRESHOLD,
+            reason=f"Published salary tops out at ${top:,.0f}, below the ${floor:,.0f} floor.", **assessment)
+    if bottom > floor:
+        return CompensationAssessment(
+            status=CompensationStatus.CONFIRMED_ABOVE,
+            reason=f"Published range starts at ${bottom:,.0f}, above the ${floor:,.0f} floor.", **assessment)
+    if bottom == floor:
+        return CompensationAssessment(
+            status=CompensationStatus.CONFIRMED_AT,
+            reason=f"Published range starts exactly at the ${floor:,.0f} floor.", **assessment)
+    return CompensationAssessment(
+        status=CompensationStatus.OVERLAPS_THRESHOLD,
+        reason=f"Published range ${bottom:,.0f}-${top:,.0f} spans the ${floor:,.0f} floor; an offer at the "
+        "bottom of the range would not clear it.", **assessment)
+
+
 def _annual_component(figure: float, comp, *, confidence: float, note: str = "") -> FitComponent:
     if figure >= comp.full_time.strong_annual:
         score = 1.0
@@ -190,7 +257,7 @@ def _annual_component(figure: float, comp, *, confidence: float, note: str = "")
         score = max(0.0, 0.6 * (figure / comp.full_time.minimum_annual))
     return FitComponent(
         score=round(score, 3),
-        reason=f"Published salary (~${figure:,.0f}) compared against target range "
+        reason=f"Published salary from ${figure:,.0f} compared against target range "
         f"(${comp.full_time.minimum_annual:,.0f} min / ${comp.full_time.strong_annual:,.0f} strong).{note}",
         evidence=[f"annual={figure}"],
         confidence=confidence,
@@ -204,7 +271,7 @@ def score_compensation_fit(job: NormalizedJob, preferences: Preferences) -> FitC
     # publishes salary — compare it rather than reporting "not published"
     # next to a visible range (Phase 4.4).
     if job.employment_type not in (EmploymentType.FULL_TIME, EmploymentType.CONTRACT, EmploymentType.FREELANCE):
-        figure = job.salary_max or job.salary_min
+        figure = job.salary_min or job.salary_max
         if figure is not None:
             return _annual_component(
                 figure, comp, confidence=0.7,
@@ -221,7 +288,10 @@ def score_compensation_fit(job: NormalizedJob, preferences: Preferences) -> FitC
                 evidence=[],
                 confidence=0.15,
             )
-        figure = job.salary_max or job.salary_min
+        # The bottom of a published range, not the top: an offer can land
+        # anywhere in it, so the minimum is what the posting actually
+        # guarantees (Phase 5).
+        figure = job.salary_min or job.salary_max
         return _annual_component(figure, comp, confidence=0.85)
 
     if job.employment_type in (EmploymentType.CONTRACT, EmploymentType.FREELANCE):

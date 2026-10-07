@@ -3,7 +3,9 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from careers_os.domain.compensation import CompensationAssessment, CompensationStatus
 from careers_os.domain.eligibility import EligibilityResult
+from careers_os.domain.enums import SearchTrack
 from careers_os.domain.qualification import QualificationResult
 
 
@@ -80,6 +82,25 @@ class CareerTrackResult(BaseModel):
     evidence: list[str] = Field(default_factory=list)
 
 
+class Readiness(str, Enum):
+    """How ready the candidate is for this job today — see
+    career/readiness.py. Structured categories, not a score."""
+
+    IMMEDIATE_FIT = "immediate_fit"
+    STRETCH = "stretch"
+    LEARNING_TARGET = "learning_target"
+    NEEDS_VERIFICATION = "needs_verification"
+    NOT_A_FIT = "not_a_fit"
+
+
+class ReadinessResult(BaseModel):
+    level: Readiness
+    reason: str
+    core_gaps: list[str] = Field(default_factory=list)          # core requirements with no evidence
+    thin_core_gaps: list[str] = Field(default_factory=list)     # adjacent evidence only
+    unverified_requirements: list[str] = Field(default_factory=list)  # core lines the taxonomy missed
+
+
 class Freshness(str, Enum):
     FRESH = "fresh"
     RECENT = "recent"
@@ -109,7 +130,7 @@ class PursueResult(BaseModel):
     contributing_factors: list[str] = Field(default_factory=list)
 
 
-EVALUATION_VERSION = "opportunity-decision-v3"
+EVALUATION_VERSION = "opportunity-decision-v4"
 
 
 class OpportunityDecision(BaseModel):
@@ -128,6 +149,17 @@ class OpportunityDecision(BaseModel):
     pursue: PursueResult
     work_style: WorkStyleResult = Field(
         default_factory=lambda: WorkStyleResult(style=WorkStyle.UNKNOWN, reason="Not assessed.")
+    )
+    # Phase 5: which search objective surfaced this job, how ready the
+    # candidate is for it, and whether its pay is confirmed.
+    tracks: list[SearchTrack] = Field(default_factory=list)
+    readiness: ReadinessResult = Field(
+        default_factory=lambda: ReadinessResult(level=Readiness.STRETCH, reason="Not assessed.")
+    )
+    compensation: CompensationAssessment = Field(
+        default_factory=lambda: CompensationAssessment(
+            status=CompensationStatus.UNKNOWN, reason="Not assessed."
+        )
     )
     career_track: CareerTrackResult = Field(
         default_factory=lambda: CareerTrackResult(

@@ -143,7 +143,7 @@ class TestTwoTransitionPaths:
 
     def test_stack_adjacent_and_target_direction_profiles_are_both_enabled(self):
         enabled = {p.name for p in SearchProfilesConfig.load().enabled_profiles()}
-        assert {"php", "laravel", "craft", "wordpress", "backend_platform", "fde"} <= enabled
+        assert {"php", "laravel", "craft", "wordpress", "fullstack_js", "backend_api", "fde"} <= enabled
 
 
 class TestRemoteCompatibilityEndToEnd:

@@ -50,6 +50,13 @@ def compute_qualification(detail: ExperienceFitDetail) -> QualificationResult:
         m for m in detail.requirement_matches
         if m.requirement.importance != RequirementImportance.PREFERRED and m.match_type in _MATCH_SCORE
     ]
+    # Phase 5: when the posting marks some requirements as core (title,
+    # years minimum, or a requirements section), judge on those. Before
+    # this, a passing mention of AWS counted as much as the core stack,
+    # which is how incidental matches averaged their way to STRONG.
+    core = [m for m in non_preferred if m.requirement.is_core]
+    if core:
+        non_preferred = core
     if not non_preferred:
         return QualificationResult(
             status=QualificationStatus.UNKNOWN,

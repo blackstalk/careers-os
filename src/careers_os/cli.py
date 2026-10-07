@@ -9,20 +9,23 @@ from rich.table import Table
 
 from careers_os.career.applications import APPLICATION_STATUSES, ApplicationEntry, ApplicationLog, normalize_url
 from careers_os.career.preferences import Preferences
+from careers_os.career.profile import CareerProfile
 from careers_os.career.resume_import import import_resume_docx
 from careers_os.career.resume_recommendation import recommend_resume_variant
 from careers_os.career.search_profiles import SearchProfilesConfig
 from careers_os.career.timeline import humanize_years
-from careers_os.domain.enums import EmploymentType, JobStatus
+from careers_os.domain.enums import EmploymentType, JobStatus, SearchTrack
 from careers_os.domain.job import format_compensation
 from careers_os.domain.matching import AIAssessmentType, MatchType
 from careers_os.domain.query import JobSearchQuery, SortOrder
 from careers_os.ingestion.discovery import DiscoveryOpportunity, run_discovery
 from careers_os.ingestion.evaluation import evaluate_opportunity
+from careers_os.ingestion.manual import MANUAL_SOURCE, build_manual_job, ingest_manual_posting, posting_id
 from careers_os.ingestion.pipeline import IngestionResult, run_search_ingestion
 from careers_os.ingestion.scheduled_run import run_scheduled_pipeline
 from careers_os.notifications.email_channel import EmailNotificationChannel
 from careers_os.observability.logging import configure_logging
+from careers_os.scoring.engine import score_job
 from careers_os.career.evidence_index import EvidenceIndex
 from careers_os.sources.ashby.config import AshbyBoardsConfig
 from careers_os.sources.ashby.source import AshbySource
@@ -530,6 +533,11 @@ def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
                   f"Opportunity Cost: {decision.opportunity_cost.level.value}  |  "
                   f"Work Style: {decision.work_style.style.value}  |  "
                   f"Career Track: {decision.career_track.alignment.value}")
+    console.print(f"   Search track: {', '.join(t.value for t in decision.tracks) or 'replacement'}  |  "
+                  f"Readiness: {decision.readiness.level.value.replace('_', ' ')}  |  "
+                  f"Pay: {decision.compensation.status.value.replace('_', ' ')}")
+    if decision.readiness.core_gaps:
+        console.print(f"   [yellow]Core gaps:[/yellow] {', '.join(decision.readiness.core_gaps[:4])}")
 
     detail = opp.fit.experience_detail
     if detail is not None and detail.strong_matches:
@@ -696,6 +704,22 @@ def _print_ai_refinement(stats) -> None:
         console.print(f"  [magenta]AI review changed[/magenta] {change}")
 
 
+def _print_track_funnel(tracks) -> None:
+    """Per-track selection (Phase 5): each search objective has its own
+    threshold and budget, so they never compete for the same slots."""
+    if not tracks:
+        return
+    table = Table(title="Alerts by search track")
+    for col in ("Track", "Over threshold", "Confirmed", "Needs verification", "Budget", "Selected", "Deferred"):
+        table.add_column(col)
+    for name in sorted(tracks):
+        f = tracks[name]
+        budget = f"{f.budget}" + (f" (+{f.verification_budget} verify)" if f.verification_budget else "")
+        table.add_row(name, str(f.alert_threshold), str(f.confirmed), str(f.needs_verification),
+                      budget, str(f.selected), str(f.deferred))
+    console.print(table)
+
+
 def _print_source_funnel(sources) -> None:
     if not sources:
         return
@@ -827,6 +851,7 @@ def run_scheduled(
     console.print(f"Notifications sent: {m.notifications_sent}")
     console.print(f"Suppressed as duplicates: {m.notifications_suppressed_duplicate}")
     console.print(f"Failures: {m.failures}")
+    _print_track_funnel(m.tracks)
     _print_source_funnel(m.sources)
     for note in result.notes:
         console.print(f"[yellow]note:[/yellow] {note}")
@@ -878,6 +903,76 @@ def notifications_test() -> None:
     else:
         console.print(f"[red]Test email failed: {result.error}[/red]")
         raise typer.Exit(code=1)
+
+
+@app.command("add-posting")
+def add_posting(
+    url: str = typer.Argument(..., help="URL of the posting (Indeed, a careers page, anything)."),
+    description_file: Optional[Path] = typer.Option(
+        None, "--file", "-f", help="File containing the copied job description text."
+    ),
+    title: Optional[str] = typer.Option(None, "--title", help="Job title (required for a new posting)."),
+    company: Optional[str] = typer.Option(None, "--company"),
+    canonical_url: Optional[str] = typer.Option(
+        None, "--canonical-url",
+        help="The employer's own posting URL (Greenhouse/Ashby/Lever/...) when you know it.",
+    ),
+    location: Optional[str] = typer.Option(None, "--location"),
+    salary_min: Optional[float] = typer.Option(None, "--salary-min"),
+    salary_max: Optional[float] = typer.Option(None, "--salary-max"),
+    ai: bool = typer.Option(False, "--ai/--no-ai", help="Also run the optional AI evidence review."),
+) -> None:
+    """Evaluate a posting you found by hand through the normal pipeline.
+
+    No scraping: you supply the URL and the copied description. The job
+    is stored under the `manual` source with a URL-derived id, so
+    re-adding the same URL updates that row rather than duplicating it,
+    and the existing cross-source duplicate scan will link it to the
+    employer's own posting if that is discovered later.
+
+    Example:
+        jobs add-posting https://www.indeed.com/viewjob?jk=... \
+            --file posting.txt --title "Senior Laravel Developer" --company Acme
+    """
+    if description_file is None:
+        console.print("[red]--file is required[/red]: save the posting text and pass it in.")
+        raise typer.Exit(code=1)
+    if not description_file.exists():
+        console.print(f"[red]No such file:[/red] {description_file}")
+        raise typer.Exit(code=1)
+    description = description_file.read_text()
+
+    repo = _repository()
+    existing = repo.get_job(MANUAL_SOURCE, posting_id(canonical_url or url))
+    if title is None and existing is None:
+        console.print("[red]--title is required[/red] for a posting that isn't stored yet.")
+        raise typer.Exit(code=1)
+
+    raw, normalized = build_manual_job(
+        url=url, description=description, title=title or existing.title,
+        company=company or (existing.company if existing else None),
+        canonical_url=canonical_url, location=location,
+        salary_min=salary_min, salary_max=salary_max,
+    )
+    record, is_new = ingest_manual_posting(repo, raw, normalized)
+
+    preferences = Preferences.load()
+    evidence_index = _evidence_index()
+    fit = score_job(normalized, CareerProfile.load(), preferences, use_ai=ai, evidence_index=evidence_index)
+    repo.save_score(record.id, fit)
+    result = evaluate_opportunity(
+        normalized, fit, preferences=preferences, evidence_index=evidence_index, use_ai=ai,
+        tracks=[SearchTrack.REPLACEMENT],
+    )
+    repo.save_evaluation(record.id, result.decision)
+    repo.commit()
+
+    console.print(f"[green]{'Stored' if is_new else 'Updated'}[/green] manual posting as "
+                  f"{MANUAL_SOURCE}:{record.source_job_id}\n")
+    _print_evaluation_report(record, result)
+    duplicates = repo.duplicate_job_ids(record.id)
+    if duplicates:
+        console.print(f"\n[dim]Linked to {len(duplicates)} already-known posting(s) of the same role.[/dim]")
 
 
 @app.command("applied")
@@ -1250,6 +1345,18 @@ def _print_evaluation_report(job_record, result) -> None:
 
     console.print("[bold]OPPORTUNITY COST[/bold]")
     console.print(f"{decision.opportunity_cost.level.value}: {decision.opportunity_cost.reason}\n")
+
+    r = decision.readiness
+    console.print("[bold]READINESS[/bold]")
+    console.print(f"{r.level.value.replace('_', ' ')}: {r.reason}")
+    console.print(f"Search track: {', '.join(t.value for t in decision.tracks) or 'replacement'}")
+    console.print(f"Compensation: {decision.compensation.status.value.replace('_', ' ')} "
+                  f"({decision.compensation.reason})")
+    for label, items in (("Core gaps", r.core_gaps), ("Thin core evidence", r.thin_core_gaps),
+                         ("Core requirements not machine-verified", r.unverified_requirements)):
+        if items:
+            console.print(f"  {label}: {'; '.join(items[:5])}")
+    console.print()
 
     ct = decision.career_track
     console.print("[bold]CAREER TRACK[/bold]")

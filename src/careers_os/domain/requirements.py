@@ -32,12 +32,20 @@ class JobRequirement(BaseModel):
     so the optional AI evidence reasoner can cite *which* requirement it's
     assessing, and so that citation can be validated (see
     scoring/evidence_reasoner.py).
+
+    `is_core` (Phase 5) marks a requirement the posting itself presents
+    as central: named in the title, carrying an explicit years minimum,
+    or listed inside a requirements/qualifications section. A skill
+    mentioned once in passing elsewhere is context, not a gate. Before
+    this existed, every taxonomy mention anywhere counted equally toward
+    qualification. See scoring/requirements.py.
     """
 
     id: Optional[str] = None
     category: SkillCategory
     canonical_skill: Optional[str] = None
     text: str
+    is_core: bool = False
     is_preferred: bool = False  # False = required/unspecified, True = "preferred"/"nice to have"
     importance: RequirementImportance = RequirementImportance.REQUIRED
     raw_context: Optional[str] = None

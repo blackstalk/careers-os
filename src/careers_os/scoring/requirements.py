@@ -42,6 +42,25 @@ _HARD_SECTION_MARKERS = (
     "what you’ll need",
 )
 
+# Headings that open a requirements/qualifications list. Broader than
+# _HARD_SECTION_MARKERS on purpose: these mark what the posting treats as
+# core (Phase 5), while _HARD_SECTION_MARKERS still governs the stricter
+# HARD_REQUIRED gate.
+_CORE_SECTION_MARKERS = _HARD_SECTION_MARKERS + (
+    "requirements", "qualifications", "what you'll bring", "what you will bring",
+    "what you bring", "who you are", "about you", "skills and experience",
+    "experience required", "must have", "what we're looking for", "what we are looking for",
+)
+
+# A requirement-section line reads as core when it is phrased as one.
+_CORE_PHRASING = re.compile(
+    r"\d+\+?\s*(?:years?|yrs?)|experience (?:with|in|building|developing)|proficien\w+|"
+    r"strong (?:knowledge|experience|background|command)|expertise (?:with|in)|"
+    r"deep (?:knowledge|experience)|must have|solid (?:experience|understanding)",
+    re.IGNORECASE,
+)
+_MAX_UNMATCHED_CORE = 6
+
 _YEARS_PATTERN = re.compile(r"(\d+)\+?\s*(?:years?|yrs?)\b", re.IGNORECASE)
 _CONTEXT_WINDOW = 60
 
@@ -87,6 +106,49 @@ def _preferred_section_start(text_lower: str) -> Optional[int]:
     return _section_start(text_lower, _PREFERRED_SECTION_MARKERS)
 
 
+def _core_span(text_lower: str, preferred_start: Optional[int]) -> Optional[tuple[int, int]]:
+    """Character span of the posting's requirements/qualifications list:
+    from the first such heading to the preferred-qualifications heading
+    (or the end). Everything inside it is what the employer presents as
+    core."""
+    start = _section_start(text_lower, _CORE_SECTION_MARKERS)
+    if start is None:
+        return None
+    end = preferred_start if preferred_start is not None and preferred_start > start else len(text_lower)
+    return start, end
+
+
+def unmatched_core_requirement_lines(
+    job: NormalizedJob, taxonomy: Optional[SkillsTaxonomy] = None
+) -> list[str]:
+    """Requirement-section lines phrased as core requirements that matched
+    no taxonomy skill (Phase 5). Conservative by construction: only lines
+    inside the requirements section, only ones using requirement
+    phrasing, and only ones containing no recognized skill alias at all.
+    These are reported as uncertainty, never scored as gaps."""
+    taxonomy = taxonomy or SkillsTaxonomy.load()
+    text = f"{job.title}\n{job.description or ''}"
+    text_lower = text.lower()
+    span = _core_span(text_lower, _preferred_section_start(text_lower))
+    if span is None:
+        return []
+    start, end = span
+
+    aliases = [a.lower().strip() for d in taxonomy.skills.values() for a in d.aliases]
+    lines: list[str] = []
+    for raw_line in re.split(r"[\n\r]+|(?<=[.;])\s{1,}", text[start:end]):
+        line = " ".join(raw_line.split()).strip(" -•*\t")
+        if not (25 <= len(line) <= 220) or not _CORE_PHRASING.search(line):
+            continue
+        low = line.lower()
+        if any(alias in low for alias in aliases):
+            continue
+        lines.append(line)
+        if len(lines) >= _MAX_UNMATCHED_CORE:
+            break
+    return lines
+
+
 def extract_requirements(
     job: NormalizedJob, taxonomy: Optional[SkillsTaxonomy] = None
 ) -> list[JobRequirement]:
@@ -95,6 +157,8 @@ def extract_requirements(
     text_lower = text.lower()
     preferred_start = _preferred_section_start(text_lower)
     hard_start = _section_start(text_lower, _HARD_SECTION_MARKERS)
+    core_span = _core_span(text_lower, preferred_start)
+    title_lower = (job.title or "").lower()
 
     requirements: dict[str, JobRequirement] = {}
 
@@ -108,7 +172,10 @@ def extract_requirements(
             continue
 
         is_preferred = preferred_start is not None and first_position >= preferred_start
+        in_core_section = core_span is not None and core_span[0] <= first_position < core_span[1]
+        in_title = any(alias.lower() in title_lower for alias in definition.aliases)
         requirements[key] = JobRequirement(
+            is_core=bool(not is_preferred and (in_core_section or in_title)),
             id=key,
             category=definition.category,
             canonical_skill=key,
@@ -161,7 +228,7 @@ def extract_requirements(
         if attached:
             existing = requirements[nearest_key]
             if existing.min_years is None or years > existing.min_years:
-                updates: dict = {"min_years": years}
+                updates: dict = {"min_years": years, "is_core": not years_in_preferred_section}
                 if years_in_hard_section and not years_in_preferred_section:
                     updates["importance"] = RequirementImportance.HARD_REQUIRED
                 requirements[nearest_key] = existing.model_copy(update=updates)
@@ -173,6 +240,7 @@ def extract_requirements(
                     category=SkillCategory.RESPONSIBILITY,
                     canonical_skill=None,
                     text=f"{years}+ years of relevant experience",
+                    is_core=not years_in_preferred_section,
                     raw_context=context.strip(),
                     min_years=years,
                     importance=(

@@ -249,6 +249,26 @@ untouched — the alert budget and clustering results are run-level policy
 output, not source health, and `jobs run`'s own header already surfaces
 the active budget every time it runs.
 
+## Per-track budgets (Phase 5)
+
+Alert selection runs **per search track**, each with its own threshold
+and budget (`preferences.yaml`'s `alert_policy.tracks`):
+
+| Track | Threshold | Budget | Verification budget |
+|---|---|---|---|
+| replacement | strong_pursue | 4 | 1 |
+| exploratory | strong_pursue | 1 | 0 |
+
+A compelling exploratory role can therefore never consume a replacement
+slot. Within the replacement track, opportunities whose pay or
+eligibility is unconfirmed (readiness `needs_verification`) are held in a
+**separate** allowance of one: they are only sent after the confirmed
+budget is spent, they never displace a confirmed match, and they are
+labeled as needing verification rather than presented as confirmed.
+
+Omit the `tracks:` block and behavior falls back to the single
+operating-mode threshold and budget exactly as before Phase 5.
+
 ## AI review of finalists (Phase 4.3)
 
 After applied jobs and superseded aggregator copies are removed, the

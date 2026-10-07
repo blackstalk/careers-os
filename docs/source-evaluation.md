@@ -168,3 +168,59 @@ Records are never merged, so provenance stays intact.
 - `jobs run` prints a per-source table: raw results, new jobs, unique jobs,
   jobs no other source found, eligible, qualified, pursue or better,
   alert-ready, and any failures.
+
+
+## Indeed (re-checked October 2026)
+
+**Not implemented, deliberately.** Indeed's partner documentation shows a
+GraphQL `jobSearch` example, but access to the underlying
+job-retrieval-service is provisioned per partner and the documented
+ecosystem is oriented toward employer and ATS integrations, not personal
+job discovery. Nothing verifiable here grants this project API access, so
+no adapter was built and no scraping was added.
+
+**What exists instead:** `jobs add-posting` (ingestion/manual.py). Supply
+the posting URL and the copied description and it runs through the same
+normalize, persist, score, evaluate path as every adapter:
+
+```bash
+command jobs add-posting "https://www.indeed.com/viewjob?jk=..." \
+    --file posting.txt --title "Senior Laravel Developer" --company Acme \
+    --canonical-url "https://job-boards.greenhouse.io/acme/jobs/123"
+```
+
+The job is stored under `source="manual"` with a URL-derived id, so
+re-adding the same URL updates that row instead of duplicating it. When
+`--canonical-url` is supplied it becomes the stored posting URL; when the
+employer's ATS posting is later discovered on its own, the existing
+cross-source duplicate scan links the two and `sources/authority.py`
+prefers the employer copy. Nothing is merged or overwritten.
+
+## Source coverage is biased toward the exploratory track
+
+Measured against the local database (October 2026), not estimated:
+
+| Discovery profile | Stored jobs surfaced |
+|---|---|
+| fde (exploratory) | 1,540 |
+| backend_platform (now split) | 601 |
+| php | 68 |
+| wordpress | 53 |
+| laravel | 46 |
+| craft | 2 |
+
+The configured boards explain it: of 34 boards, the Greenhouse and Ashby
+lists are AI labs and developer-infrastructure companies (OpenAI,
+Anthropic, Stripe, ElevenLabs, GitLab, Baseten, LangChain, Cohere,
+Deepgram...), and only three accounts across all sources target
+PHP/Laravel/WordPress work. Craft CMS has effectively no coverage: two
+jobs in the entire database.
+
+**No boards were added in this phase.** Adding companies from memory
+would be guessing, and every existing board was verified live before
+being added. Expanding replacement-track coverage is the single highest
+leverage follow-up, and it needs a verifiable list of Craft/Laravel
+agencies and product companies with supported ATS boards, checked slug by
+slug against the adapters before being committed. Until then the
+replacement track depends mostly on Himalayas keyword search and manual
+postings.

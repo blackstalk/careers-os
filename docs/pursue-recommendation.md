@@ -353,6 +353,50 @@ Engineer, Ads") still pass, and a vendor-specific FDE role (Kong) is
 still `aligned`. Both are what the bounded AI review
 (docs/scoring.md#bounded-ai-refinement) is for.
 
+## Readiness (Phase 5)
+
+`pursue` weighs qualification, direction, immediate opportunity and
+opportunity cost together. For the replacement objective that blends too
+much, so `career/readiness.py` adds a structured, separate answer to "how
+ready am I for this job today?":
+
+| Level | Meaning |
+|---|---|
+| `immediate_fit` | Core requirements evidenced, eligibility clear, pay confirmed |
+| `stretch` | Real but manageable gaps (one or two), or qualification short of fully evidenced |
+| `learning_target` | Three or more unmet core signals, or weak qualification |
+| `needs_verification` | Eligibility unresolved, or pay unconfirmed on the replacement track |
+| `not_a_fit` | Ineligible, or a failed hard qualification gate |
+
+Precedence runs top-down from `not_a_fit`. Compensation, employer
+prestige and long-term career alignment are absent as *upgrades*: they
+can never turn a core gap into readiness.
+
+### What made stretch roles look strong before
+
+Three compounding causes, all fixed here:
+
+1. **Every taxonomy mention counted equally.** `scoring/requirements.py`
+   marked any skill named anywhere as `REQUIRED`, so a passing "AWS"
+   weighed the same as the core stack. Requirements are now marked
+   `is_core` when they appear in the title, carry a years minimum, or sit
+   inside a requirements/qualifications section, and `compute_qualification`
+   averages core requirements when any exist.
+2. **Unrecognized core responsibilities were invisible.** A requirement
+   with no taxonomy match became `UNKNOWN` and was filtered out of
+   qualification entirely. Those lines are now captured as
+   `unmatched_core_requirements` — structured uncertainty that can hold a
+   job at `stretch` or `learning_target` without being scored as a gap.
+3. **Career direction gated the top recommendation.** `strong_pursue`
+   required a strong direction signal, which a Craft or Laravel role
+   rarely has. On the replacement track readiness replaces direction:
+   `strong_pursue` means credible now, and a strong direction signal
+   can no longer rescue a weak immediate opportunity. The exploratory
+   track keeps the original behavior.
+
+Replacement `strong_pursue` additionally requires `QualificationStatus.STRONG`;
+`MODERATE` caps at `pursue`.
+
 ## Regression cases (real jobs, live-discovered)
 
 All three verified end-to-end through the actual CLI

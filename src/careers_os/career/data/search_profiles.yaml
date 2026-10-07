@@ -12,48 +12,73 @@
 # Systems) via the Ashby/Lever sources added alongside it.
 
 profiles:
+  # Priority orders the replacement anchors for tie-breaks only (1 =
+  # highest). Craft first, then PHP/Laravel, then full-stack JS/TS/React,
+  # then backend/API, then mobile, with WordPress last. Ranking is still
+  # decided by evidence, compensation, remote eligibility and day-to-day
+  # shape: a credible React/TypeScript role outranks a mediocre Craft one.
+  craft:
+    enabled: true
+    track: replacement
+    priority: 1
+    queries:
+      - "Craft CMS"
+
   php:
     enabled: true
+    track: replacement
+    priority: 2
     queries:
       - PHP
 
   laravel:
     enabled: true
+    track: replacement
+    priority: 2
     queries:
       - Laravel
 
-  craft:
+  # Phase 5: replaces the former `backend_platform` profile, split so
+  # full-stack/React discovery isn't buried behind backend phrasing.
+  # "Software Engineer" is deliberately excluded for now: too noisy
+  # across the current sources to be a useful lens (revisit once
+  # production coverage is measured).
+  fullstack_js:
     enabled: true
+    track: replacement
+    priority: 3
     queries:
-      - "Craft CMS"
+      - "Full Stack Engineer"
+      - "Full Stack Developer"
+      - "Web Application Developer"
+      - "React Developer"
+      - "React Native"
+      - "Mobile Application Developer"
+
+  backend_api:
+    enabled: true
+    track: replacement
+    priority: 4
+    queries:
+      - "Backend Engineer"
+      - "Backend Developer"
+      - "API Integration"
+      - "Integration Engineer"
 
   wordpress:
     enabled: true
+    track: replacement
+    priority: 6
     queries:
       - WordPress
 
-  # Phase 4.1: the brand-name profiles above only discover roles that
-  # explicitly mention PHP/Laravel/Craft/WordPress by name — this widens
-  # discovery to plain backend/platform/integration roles that are
-  # equally strong stack-adjacent (Path A) matches but never name those
-  # specific technologies. Deliberately excludes generic single-word
-  # terms like "AWS" or "API" alone, which would return enough noise
-  # across every technical posting to defeat the point of a search
-  # profile — see docs/discovery.md.
-  backend_platform:
-    enabled: true
-    queries:
-      - "Backend Engineer"
-      - "Platform Engineer"
-      - "API Integration"
-
-  # Phase 4.2: consultant/presales-style titles (Solutions Engineer,
-  # Customer Engineer) stay in on purpose — the same title can be hands-on
-  # or meeting-heavy, and career/work_style.py judges that from the
-  # description. "AI Engineer" and "Systems Engineer" widen coverage of the
-  # build-heavy roles this search is now centered on.
+  # Exploratory: the longer-term career direction. Kept discoverable for
+  # market feedback and learning, with its own alert budget so it can
+  # never crowd out replacement-track opportunities (docs/alerts.md).
   fde:
     enabled: true
+    track: exploratory
+    priority: 9
     queries:
       - "Forward Deployed"
       - "Solutions Architect"

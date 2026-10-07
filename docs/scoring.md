@@ -69,6 +69,30 @@ score matters.
 
 ### Role / technical / career-direction fit
 
+### Compensation certainty (Phase 5)
+
+The 0-1 compensation score answers "how good is this pay?". The
+replacement objective asks something stricter: **is this confirmed to pay
+at least the configured base floor?** `scoring/deterministic.py::assess_compensation`
+answers that separately (`domain/compensation.py`):
+
+| Published | Status |
+|---|---|
+| $125K-$150K | `confirmed_above` |
+| $120K-$150K | `confirmed_at` |
+| $100K-$130K | `overlaps_threshold` — the maximum clears the floor, an offer at the bottom would not |
+| $90K-$115K | `below_threshold` |
+| nothing | `unknown` |
+| any figure framed as OTE / total comp / "base + bonus" | `basis_uncertain` |
+| contract hourly | `non_salary`, judged against the unchanged hourly targets |
+
+A range only confirms the floor when its **minimum** clears it, and the
+score itself is now computed from the bottom of the range. Before this,
+`salary_max or salary_min` meant $100K-$130K scored as $130K and read as
+a confirmed match. `overlaps_threshold`, `basis_uncertain` and `unknown`
+all route to readiness `needs_verification`: discoverable and alertable
+through a separate small budget, never described as confirmed.
+
 Compensation is compared whenever a figure is published, even when the
 source doesn't report an employment type (Greenhouse never does) — before
 Phase 4.4 those postings scored as "unknown" and alerts said

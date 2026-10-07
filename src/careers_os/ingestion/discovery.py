@@ -21,9 +21,9 @@ from careers_os.career.candidate import CandidateProfile
 from careers_os.career.discovery_ranking import apply_freshness_penalty, compute_rank_score
 from careers_os.career.preferences import Preferences
 from careers_os.career.profile import CareerProfile
-from careers_os.career.search_profiles import SearchProfile
+from careers_os.career.search_profiles import SearchProfile, SearchProfilesConfig
 from careers_os.career.skills import SkillsTaxonomy
-from careers_os.domain.enums import EmploymentType
+from careers_os.domain.enums import EmploymentType, SearchTrack
 from careers_os.domain.opportunity_decision import OpportunityDecision
 from careers_os.domain.query import JobSearchQuery
 from careers_os.domain.scoring import CareerFitResult
@@ -49,6 +49,9 @@ class DiscoveryOpportunity:
     matched_profiles: list[str]
     rank_score: float
     decision: OpportunityDecision
+    # Which search objectives surfaced this job (Phase 5). Defaulted so
+    # existing call sites and fixtures keep working.
+    tracks: list[SearchTrack] = field(default_factory=lambda: [SearchTrack.REPLACEMENT])
 
 
 @dataclass
@@ -113,6 +116,10 @@ def run_discovery(
     taxonomy = taxonomy or SkillsTaxonomy.load()
     candidate = candidate or CandidateProfile.load()
 
+    # One config read per run: maps every profile name (including ones
+    # from older runs still recorded on a job) to its track.
+    profiles_config = SearchProfilesConfig.load()
+
     result = DiscoveryResult()
     result.metrics.sources_queried = len({family for family, _ in sources})
     result.metrics.search_profiles = len(profiles)
@@ -175,14 +182,19 @@ def run_discovery(
             fit, bridge, immediate, direction, preferences.discovery_ranking_weights
         )
         normalized = job_record_to_normalized(job)
+        tracks = sorted(
+            {profiles_config.track_for(name) for name in (job.discovered_by_profiles or [])}
+            or {SearchTrack.REPLACEMENT},
+            key=lambda t: t.value,
+        )
         eval_result = evaluate_opportunity(
             normalized, fit, candidate=candidate, preferences=preferences,
-            taxonomy=taxonomy, evidence_index=evidence_index, use_ai=False,
+            taxonomy=taxonomy, evidence_index=evidence_index, use_ai=False, tracks=tracks,
         )
         opportunities.append(
             DiscoveryOpportunity(
                 job=job, fit=eval_result.fit, bridge=bridge, immediate=immediate, direction=direction,
-                matched_profiles=list(job.discovered_by_profiles),
+                matched_profiles=list(job.discovered_by_profiles), tracks=tracks,
                 rank_score=apply_freshness_penalty(rank_score, eval_result.decision.freshness.level),
                 decision=eval_result.decision,
             )

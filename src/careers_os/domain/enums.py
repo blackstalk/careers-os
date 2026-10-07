@@ -37,6 +37,18 @@ class SourceHealthStatus(str, Enum):
     BROKEN = "broken"
 
 
+class SearchTrack(str, Enum):
+    """Which objective a search profile serves (Phase 5). The replacement
+    track is the primary one: a remote hands-on development role that can
+    replace the current position. The exploratory track keeps the longer
+    term career direction (FDE / applied AI / solutions) in view without
+    competing for the same alert budget. See docs/discovery.md#tracks.
+    """
+
+    REPLACEMENT = "replacement"
+    EXPLORATORY = "exploratory"
+
+
 class OperatingMode(str, Enum):
     """How aggressively Careers OS surfaces opportunities for alerting —
     see docs/alerts.md#operating-modes. Centralized here (not scattered

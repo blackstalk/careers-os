@@ -26,15 +26,19 @@ from careers_os.career.opportunity_value import (
 )
 from careers_os.career.preferences import Preferences
 from careers_os.career.pursue import compute_pursue_recommendation
+from careers_os.career.readiness import assess_readiness
 from careers_os.career.scope import classify_scope
 from careers_os.career.skills import SkillsTaxonomy
 from careers_os.career.work_style import classify_work_style
+from careers_os.domain.enums import SearchTrack
 from careers_os.domain.job import NormalizedJob
 from careers_os.domain.opportunity_decision import OpportunityDecision
 from careers_os.domain.qualification import QualificationResult, QualificationStatus
 from careers_os.domain.scoring import CareerFitResult
 from careers_os.scoring.evidence_reasoner import EvidenceReasoner, apply_evidence_reasoning
+from careers_os.scoring.deterministic import assess_compensation
 from careers_os.scoring.qualification import compute_qualification
+from careers_os.scoring.requirements import unmatched_core_requirement_lines
 
 
 @dataclass
@@ -56,6 +60,7 @@ def evaluate_opportunity(
     evidence_index: Optional[EvidenceIndex] = None,
     use_ai: bool = True,
     reasoner: Optional[EvidenceReasoner] = None,
+    tracks: Optional[list[SearchTrack]] = None,
 ) -> EvaluationResult:
     candidate = candidate or CandidateProfile.load()
     preferences = preferences or Preferences.load()
@@ -69,6 +74,12 @@ def evaluate_opportunity(
         fit = fit.model_copy(update={"experience_detail": detail})
 
     if detail is not None:
+        # Core requirement lines the taxonomy didn't recognize are carried
+        # as structured uncertainty rather than dropped (Phase 5).
+        unmatched = unmatched_core_requirement_lines(job, taxonomy)
+        if unmatched and not detail.unmatched_core_requirements:
+            detail = detail.model_copy(update={"unmatched_core_requirements": unmatched})
+            fit = fit.model_copy(update={"experience_detail": detail})
         qualification = compute_qualification(detail)
     else:
         qualification = QualificationResult(
@@ -84,11 +95,19 @@ def evaluate_opportunity(
     freshness = assess_freshness(job.posted_at, preferences.freshness_thresholds)
     work_style = classify_work_style(job.description)
     career_track = classify_career_track(job.title, detail, job.description)
+    search_tracks = list(tracks) if tracks else [SearchTrack.REPLACEMENT]
+    primary_track = (
+        SearchTrack.REPLACEMENT if SearchTrack.REPLACEMENT in search_tracks else search_tracks[0]
+    )
+    compensation = assess_compensation(job, preferences)
+    readiness = assess_readiness(eligibility, qualification, detail, compensation, track=primary_track)
     pursue = compute_pursue_recommendation(
         eligibility, qualification, immediate, direction, opportunity_cost,
         work_style=work_style,
         disfavored_work_styles=set(preferences.work_style.disfavored),
         career_track=career_track,
+        track=primary_track,
+        readiness=readiness,
     )
 
     decision = OpportunityDecision(
@@ -100,5 +119,8 @@ def evaluate_opportunity(
         pursue=pursue,
         work_style=work_style,
         career_track=career_track,
+        tracks=search_tracks,
+        readiness=readiness,
+        compensation=compensation,
     )
     return EvaluationResult(decision=decision, fit=fit, bridge=bridge, immediate=immediate, direction=direction)

@@ -134,3 +134,21 @@ covered by tests:
    phrase, keeping the capture group case-sensitive.
 2. (Documented in docs/pursue-recommendation.md, not here, since it's a
    qualification/hard-requirement bug, not an eligibility one.)
+
+
+## Readiness and compensation certainty (Phase 5)
+
+Eligibility answers "could I hold this job at all?". Two further
+questions matter for the replacement objective and live elsewhere:
+
+- **Compensation certainty** — is $120K+ base *confirmed*, or merely
+  possible? See docs/scoring.md#compensation-certainty-phase-5.
+- **Readiness** — immediate fit, stretch, learning target, needs
+  verification, or not a fit. See
+  docs/pursue-recommendation.md#readiness-phase-5.
+
+Unresolved eligibility (a `verify`/`unknown` check, including an
+unstated work arrangement or a non-US remote scope) produces readiness
+`needs_verification`: still discoverable, alertable only through the
+small verification allowance, and never described as a confirmed
+replacement match.

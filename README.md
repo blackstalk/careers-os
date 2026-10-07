@@ -1,5 +1,14 @@
 # careers-os
 
+**Primary objective:** find a credible, fully remote, hands-on development
+role paying at least $120,000 annual base salary that can replace the
+current full-time position. Craft CMS first, then PHP/Laravel, then
+full-stack JavaScript/TypeScript/React, then backend/API/integration,
+then React Native/mobile, with WordPress lower priority. Forward Deployed
+Engineering, applied AI, and solutions architecture remain a separate
+**exploratory** track with its own ranking and alert budget, so they can
+never crowd out replacement work. See docs/discovery.md#search-tracks.
+
 A personal AI-assisted job search / career operating system. It discovers
 real jobs from multiple sources (Creative Circle, Greenhouse, Ashby,
 Lever, Workable, Himalayas), normalizes
@@ -109,6 +118,7 @@ command jobs health lever --board palantir
 command jobs health workable --board huggingface
 command jobs health himalayas
 command jobs applied <posting-url>   # never alert on it again; commit applications.yaml
+command jobs add-posting <url> --file posting.txt --title "Senior Laravel Developer"
 command jobs duplicates   # cross-source possible-duplicate flags (never auto-merged)
 command jobs history <source> <source_job_id>   # field-level change log across re-syncs
 ```

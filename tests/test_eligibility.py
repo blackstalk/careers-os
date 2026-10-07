@@ -296,8 +296,11 @@ class TestCompensationReporting:
         from careers_os.scoring.deterministic import score_compensation_fit
 
         comp = score_compensation_fit(self._job(salary_min=126400, salary_max=213600), Preferences.load())
-        assert comp.score == 1.0  # max is above the strong threshold
+        # Scored from the bottom of the range, not the top (Phase 5): the
+        # minimum is what the posting actually guarantees.
+        assert 0.6 < comp.score < 1.0
         assert comp.confidence >= 0.3  # i.e. not reported as "not published"
+        assert "from $126,400" in comp.reason
         assert "Employment type isn't stated" in comp.reason
 
     def test_missing_salary_is_still_unknown(self):
@@ -306,3 +309,71 @@ class TestCompensationReporting:
 
         comp = score_compensation_fit(self._job(), Preferences.load())
         assert comp.confidence < 0.3
+
+
+class TestCompensationCertainty:
+    """Phase 5: the replacement objective needs "is $120K+ base confirmed?",
+    which a 0-1 score cannot answer. See domain/compensation.py."""
+
+    def _job(self, **kw):
+        from careers_os.domain.enums import EmploymentType
+        kw.setdefault("employment_type", EmploymentType.FULL_TIME)
+        return NormalizedJob(
+            source="t", source_job_id="1", source_url="https://e.com/1", title="Full Stack Engineer",
+            description=kw.pop("description", "Build web applications."),
+            retrieved_at=datetime.now(timezone.utc), **kw,
+        )
+
+    def _assess(self, **kw):
+        from careers_os.career.preferences import Preferences
+        from careers_os.scoring.deterministic import assess_compensation
+        return assess_compensation(self._job(**kw), Preferences.load())
+
+    def test_range_entirely_above_the_floor_is_confirmed(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(salary_min=125000, salary_max=150000)
+        assert a.status == CompensationStatus.CONFIRMED_ABOVE and a.confirmed
+
+    def test_range_starting_exactly_at_the_floor_is_confirmed(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(salary_min=120000, salary_max=150000)
+        assert a.status == CompensationStatus.CONFIRMED_AT and a.confirmed
+
+    def test_range_straddling_the_floor_is_not_confirmed(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(salary_min=100000, salary_max=130000)
+        assert a.status == CompensationStatus.OVERLAPS_THRESHOLD
+        assert not a.confirmed and a.needs_verification
+        assert "would not clear it" in a.reason
+
+    def test_range_below_the_floor_is_below_threshold(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess(salary_min=90000, salary_max=115000)
+        assert a.status == CompensationStatus.BELOW_THRESHOLD
+        assert not a.confirmed and not a.needs_verification
+
+    def test_unpublished_salary_is_unknown_not_failed(self):
+        from careers_os.domain.compensation import CompensationStatus
+        a = self._assess()
+        assert a.status == CompensationStatus.UNKNOWN and a.needs_verification
+
+    def test_ote_language_prevents_a_confirmed_base_claim(self):
+        from careers_os.domain.compensation import CompensationBasis, CompensationStatus
+        a = self._assess(salary_min=150000, salary_max=150000,
+                         description="Compensation is $150,000 OTE, base plus commission.")
+        assert a.status == CompensationStatus.BASIS_UNCERTAIN
+        assert a.basis == CompensationBasis.UNCERTAIN and "ote" in a.signals
+
+    def test_contract_hourly_is_judged_separately(self):
+        from careers_os.domain.compensation import CompensationBasis, CompensationStatus
+        from careers_os.domain.enums import EmploymentType
+        a = self._assess(employment_type=EmploymentType.CONTRACT, hourly_min=95, hourly_max=120)
+        assert a.status == CompensationStatus.NON_SALARY and a.basis == CompensationBasis.HOURLY
+
+    def test_contract_hourly_scoring_is_unchanged(self):
+        from careers_os.career.preferences import Preferences
+        from careers_os.domain.enums import EmploymentType
+        from careers_os.scoring.deterministic import score_compensation_fit
+        comp = score_compensation_fit(
+            self._job(employment_type=EmploymentType.CONTRACT, hourly_min=95, hourly_max=120), Preferences.load())
+        assert comp.score >= 0.8 and "hourly rate" in comp.reason

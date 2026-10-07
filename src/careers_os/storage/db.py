@@ -300,6 +300,9 @@ class JobEvaluationRecord(Base):
     pursue_factors: Mapped[list] = mapped_column(JSON, default=list)
     work_style: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     career_track: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    readiness: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    compensation: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    tracks: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
 
 class NotificationRecord(Base):
@@ -354,6 +357,10 @@ def _apply_lightweight_migrations(engine: Engine) -> None:
         if "career_track" not in existing:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE job_evaluations ADD COLUMN career_track JSON"))
+        for column in ("readiness", "compensation", "tracks"):
+            if column not in existing:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE job_evaluations ADD COLUMN {column} JSON"))
 
 
 def get_engine(db_path: Optional[Path] = None) -> Engine:

@@ -78,6 +78,27 @@ alert_policy:
     minimum_pursue: pursue
     max_alerts_per_run: 5
 
+  # Phase 5: per-track budgets. The primary objective is a remote,
+  # hands-on development role paying at least the configured base floor
+  # that can replace the current position; the exploratory track (FDE /
+  # applied AI / solutions) keeps one slot so an unusually compelling
+  # role still surfaces, but can never crowd out replacement work.
+  #
+  # `max_verification_alerts_per_run` is a separate allowance for
+  # replacement opportunities that look strong but whose pay or
+  # eligibility is unconfirmed (unpublished salary, or a range like
+  # $100K-$130K that spans the floor without guaranteeing it). These are
+  # labeled "needs verification" and never counted as confirmed matches,
+  # and they are only sent after the confirmed budget is filled.
+  tracks:
+    replacement:
+      minimum_pursue: strong_pursue
+      max_alerts_per_run: 4
+      max_verification_alerts_per_run: 1
+    exploratory:
+      minimum_pursue: strong_pursue
+      max_alerts_per_run: 1
+
 # Phase 4.2: day-to-day role shapes to move away from, judged from each
 # posting's own description (career/work_style.py), never from its title.
 # A role classified as one of these is capped at `consider` — still

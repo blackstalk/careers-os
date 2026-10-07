@@ -82,6 +82,11 @@ def _usable(result: object) -> Optional[dict]:
     return {**result, **scores}
 
 
+def _unverified_requirements(opp: DiscoveryOpportunity) -> list[str]:
+    detail = opp.fit.experience_detail
+    return list(detail.unmatched_core_requirements) if detail else []
+
+
 def _matched_summary(opp: DiscoveryOpportunity, limit: int = 12) -> str:
     """The requirements this posting asks for that the candidate has real
     evidence for — so the reviewer doesn't count evidenced experience as a
@@ -94,6 +99,22 @@ def _matched_summary(opp: DiscoveryOpportunity, limit: int = 12) -> str:
         if m.match_type in (MatchType.STRONG_MATCH, MatchType.PARTIAL_MATCH)
     ]
     return ", ".join(dict.fromkeys(names))[:600]
+
+
+def _confirmed_material_gaps(review: dict, offered: list[str]) -> list[str]:
+    """Only lines the deterministic extractor itself offered may come
+    back as material gaps. The reviewer can confirm what matters; it can
+    never introduce a requirement, and it can never clear one the
+    deterministic layer already decided (Phase 5)."""
+    claimed = review.get("material_gaps") or []
+    if not isinstance(claimed, list):
+        return []
+    offered_lookup = {line.strip().lower(): line for line in offered}
+    confirmed = []
+    for item in claimed:
+        if isinstance(item, str) and item.strip().lower() in offered_lookup:
+            confirmed.append(offered_lookup[item.strip().lower()])
+    return confirmed
 
 
 def refine_finalists(
@@ -151,7 +172,10 @@ def refine_finalists(
         else:
             stats.calls += 1
             try:
-                review = _usable(evaluator(job, profile, matched=_matched_summary(opp)))
+                review = _usable(evaluator(
+                    job, profile, matched=_matched_summary(opp),
+                    unverified=_unverified_requirements(opp),
+                ))
             except Exception as exc:  # noqa: BLE001 - a review must never take down the run
                 logger.warning("ai_refinement.failed", extra={"job_id": opp.job.id, "error": str(exc)})
                 review = None
@@ -161,7 +185,17 @@ def refine_finalists(
             repository.save_ai_refinement(opp.job.id, key, ai.PROMPT_VERSION, ai.MODEL, review)
 
         before = opp.decision.pursue.recommendation
+        # A confirmed material gap is recorded on the detail so the
+        # deterministic readiness pass sees it on recompute; it can only
+        # make readiness worse, never better.
+        confirmed_gaps = _confirmed_material_gaps(review, _unverified_requirements(opp))
         refined_fit = ai.apply_ai_evaluation(opp.fit, review)
+        if confirmed_gaps and refined_fit.experience_detail is not None:
+            refined_fit = refined_fit.model_copy(update={
+                "experience_detail": refined_fit.experience_detail.model_copy(
+                    update={"unmatched_core_requirements": confirmed_gaps}
+                )
+            })
         result = evaluate_opportunity(
             job, refined_fit, candidate=candidate, preferences=preferences,
             taxonomy=taxonomy, evidence_index=evidence_index, use_ai=False,

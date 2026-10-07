@@ -6,6 +6,35 @@ technologies with strong existing market credibility, then letting Career
 OS rank the results against both immediate fit and long-term career
 direction — without requiring four separate manual searches.
 
+## Search tracks
+
+Every profile belongs to a track (`search_profiles.yaml`):
+
+| Track | Profiles | Objective |
+|---|---|---|
+| `replacement` | craft, php, laravel, fullstack_js, backend_api, wordpress | Replace the current role: remote, hands-on development, $120K+ base |
+| `exploratory` | fde | Forward deployed / applied AI / solutions, for direction and market feedback |
+
+The track travels with the job through discovery, evaluation, and
+alerting: `SearchProfilesConfig.track_for()` maps each recorded profile
+name on a job to its track, the decision carries `tracks`, and
+`ingestion/scheduled_run.py` selects alerts per track against separate
+budgets (docs/alerts.md#per-track-budgets). A job found by both tracks is
+still **one stored job**, judged as replacement work, and alerted once.
+
+`priority` (1 = highest, Craft first) breaks ties between otherwise
+equally ranked opportunities. It is never a score: a credible
+React/TypeScript role outranks a mediocre Craft one, because ranking is
+decided by evidence, compensation certainty, remote eligibility, and
+day-to-day shape.
+
+Phase 5 replaced `backend_platform` with two profiles: `backend_api`
+(Backend Engineer/Developer, API Integration, Integration Engineer) and
+`fullstack_js` (Full Stack Engineer/Developer, Web Application Developer,
+React Developer, React Native, Mobile Application Developer). Bare
+"Software Engineer" is deliberately excluded as too noisy across the
+current sources; revisit once production coverage is measured.
+
 ## Search profiles
 
 `career/data/search_profiles.yaml` — editable, no code change needed to

@@ -36,7 +36,7 @@ from careers_os.career.profile import CareerProfile
 from careers_os.career.search_profiles import SearchProfile
 from careers_os.career.skills import SkillsTaxonomy
 from careers_os.domain.eligibility import EligibilityStatus
-from careers_os.domain.enums import EmploymentType, OperatingMode
+from careers_os.domain.enums import EmploymentType, OperatingMode, SearchTrack
 from careers_os.domain.job import format_compensation
 from careers_os.domain.opportunity_decision import PursueRecommendation
 from careers_os.domain.qualification import QualificationStatus
@@ -46,7 +46,7 @@ from careers_os.ingestion.evaluation import EvaluationResult
 from careers_os.notifications.channel import NotificationChannel
 from careers_os.notifications.clustering import OpportunityCluster, cluster_opportunities, rank_clusters
 from careers_os.notifications.content import AlertContent, build_alert_content
-from careers_os.notifications.policy import alert_rank, should_alert
+from careers_os.notifications.policy import VERIFICATION_LANE, alert_lane, alert_rank
 from careers_os.sources.authority import is_aggregator
 from careers_os.sources.base import JobSource
 from careers_os.storage.repository import JobRepository
@@ -93,6 +93,22 @@ class ScheduledRunMetrics:
     failures: int = 0
 
     sources: dict[str, "SourceFunnel"] = field(default_factory=dict)
+    # Phase 5: per-track selection. Each track has its own threshold and
+    # budget, so exploratory roles never consume replacement slots.
+    tracks: dict[str, "TrackFunnel"] = field(default_factory=dict)
+
+
+@dataclass
+class TrackFunnel:
+    """One search track's slice of this run."""
+
+    alert_threshold: int = 0      # crossed this track's configured threshold
+    confirmed: int = 0            # ...and pay/eligibility are settled
+    needs_verification: int = 0   # ...but something needs confirming first
+    budget: int = 0
+    verification_budget: int = 0
+    selected: int = 0
+    deferred: int = 0
 
 
 @dataclass
@@ -186,6 +202,14 @@ def _record_source_funnel(result: "ScheduledRunResult", discovery_result, reposi
             f.qualified += 1
         if d.pursue.recommendation in (PursueRecommendation.PURSUE, PursueRecommendation.STRONG_PURSUE):
             f.pursue_or_better += 1
+
+
+def _primary_track(opp: DiscoveryOpportunity) -> SearchTrack:
+    """A job found by both a replacement and an exploratory profile is
+    judged as replacement work: that is the objective that matters now,
+    and it keeps one stored job from being alerted twice (Phase 5)."""
+    tracks = opp.decision.tracks or opp.tracks or [SearchTrack.REPLACEMENT]
+    return SearchTrack.REPLACEMENT if SearchTrack.REPLACEMENT in tracks else tracks[0]
 
 
 def _handle_cluster(
@@ -334,7 +358,7 @@ def run_scheduled_pipeline(
             result.metrics.eligible_count += 1
         if decision.pursue.recommendation in (PursueRecommendation.PURSUE, PursueRecommendation.STRONG_PURSUE):
             result.metrics.pursue_threshold_count += 1
-        if should_alert(decision, policy, mode):
+        if alert_lane(decision, policy, mode, _primary_track(opp)) is not None:
             over_threshold.append(opp)
     result.metrics.deterministic_alert_threshold_count = len(over_threshold)
 
@@ -363,8 +387,11 @@ def run_scheduled_pipeline(
         result.metrics.ai_refinement = refine_finalists(
             review_order, repository=repository,
             budget=preferences.ai_refinement.max_refinements_per_run,
-            stop_after_survivors=policy.for_mode(mode).max_alerts_per_run,
-            survives=lambda opp: should_alert(opp.decision, policy, mode),
+            stop_after_survivors=sum(
+                policy.for_track(t, mode).max_alerts_per_run for t in SearchTrack
+            ),
+            survives=lambda opp: alert_lane(
+                opp.decision, policy, mode, _primary_track(opp)) is not None,
             profile=career_profile, preferences=preferences, candidate=candidate,
             taxonomy=taxonomy, evidence_index=evidence_index,
         )
@@ -381,26 +408,50 @@ def run_scheduled_pipeline(
     for opp, status in removed:
         result.alerts.append(AlertOutcome(opportunity=opp, content=_content(opp), status=status))
 
-    alert_eligible = [opp for opp in finalists if should_alert(opp.decision, policy, mode)]
+    alert_eligible = [
+        opp for opp in finalists
+        if alert_lane(opp.decision, policy, mode, _primary_track(opp)) is not None
+    ]
     for opp in [*alert_eligible, *(o for o, _ in removed)]:
         result.metrics.alert_threshold_count += 1
         result.metrics.sources.setdefault(opp.job.source, SourceFunnel()).alert_threshold += 1
 
-    # --- Selection: which eligible opportunities actually get notified? (Phase 4.1) ---
-    clusters = rank_clusters(cluster_opportunities(alert_eligible))
-    budget = policy.for_mode(mode).max_alerts_per_run
+    # --- Selection, per track (Phase 5) ---
+    # Each track clusters and spends its own budget. Within the
+    # replacement track, opportunities whose pay or eligibility is
+    # unconfirmed are held back into a separate, smaller allowance so
+    # they can never displace a confirmed replacement match.
+    for track in sorted({_primary_track(o) for o in alert_eligible}, key=lambda t: t.value):
+        in_track = [o for o in alert_eligible if _primary_track(o) == track]
+        settings = policy.for_track(track, mode)
+        funnel = result.metrics.tracks.setdefault(track.value, TrackFunnel())
+        funnel.alert_threshold = len(in_track)
+        funnel.budget = settings.max_alerts_per_run
+        funnel.verification_budget = settings.max_verification_alerts_per_run
 
-    result.metrics.opportunity_clusters = len(clusters)
-    result.metrics.clustered_variant_count = len(alert_eligible) - len(clusters)
-    result.metrics.alert_budget = budget
-    result.metrics.alerts_selected = min(budget, len(clusters))
-    result.metrics.alerts_deferred = max(len(clusters) - budget, 0)
+        lanes = {o.job.id: alert_lane(o.decision, policy, mode, track) for o in in_track}
+        confirmed = [o for o in in_track if lanes[o.job.id] != VERIFICATION_LANE]
+        verifying = [o for o in in_track if lanes[o.job.id] == VERIFICATION_LANE]
+        funnel.confirmed, funnel.needs_verification = len(confirmed), len(verifying)
 
-    for rank, cluster in enumerate(clusters):
-        _handle_cluster(
-            cluster, selected=rank < budget, evaluation_ids=evaluation_ids,
-            repository=repository, mode=mode, dry_run=dry_run, channel=channel, result=result,
-        )
+        for group, group_budget in (
+            (confirmed, settings.max_alerts_per_run),
+            (verifying, settings.max_verification_alerts_per_run),
+        ):
+            clusters = rank_clusters(cluster_opportunities(group))
+            result.metrics.opportunity_clusters += len(clusters)
+            result.metrics.clustered_variant_count += len(group) - len(clusters)
+            funnel.selected += min(group_budget, len(clusters))
+            funnel.deferred += max(len(clusters) - group_budget, 0)
+            for rank, cluster in enumerate(clusters):
+                _handle_cluster(
+                    cluster, selected=rank < group_budget, evaluation_ids=evaluation_ids,
+                    repository=repository, mode=mode, dry_run=dry_run, channel=channel, result=result,
+                )
+
+    result.metrics.alert_budget = sum(f.budget + f.verification_budget for f in result.metrics.tracks.values())
+    result.metrics.alerts_selected = sum(f.selected for f in result.metrics.tracks.values())
+    result.metrics.alerts_deferred = sum(f.deferred for f in result.metrics.tracks.values())
 
     repository.commit()
 

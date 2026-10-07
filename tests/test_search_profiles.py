@@ -1,13 +1,33 @@
 import pytest
 
 from careers_os.career.search_profiles import SearchProfilesConfig
+from careers_os.domain.enums import SearchTrack
 from careers_os.domain.enums import EmploymentType
 
 
 class TestSearchProfilesConfig:
     def test_loads_default_profiles(self):
         config = SearchProfilesConfig.load()
-        assert set(config.profiles) == {"php", "laravel", "craft", "wordpress", "backend_platform", "fde"}
+        assert set(config.profiles) == {
+            "craft", "php", "laravel", "fullstack_js", "backend_api", "wordpress", "fde",
+        }
+
+    def test_profiles_are_attributed_to_a_track(self):
+        config = SearchProfilesConfig.load()
+        replacement = {n for n, p in config.profiles.items() if p.track == SearchTrack.REPLACEMENT}
+        exploratory = {n for n, p in config.profiles.items() if p.track == SearchTrack.EXPLORATORY}
+        assert replacement == {"craft", "php", "laravel", "fullstack_js", "backend_api", "wordpress"}
+        assert exploratory == {"fde"}
+
+    def test_unknown_profile_name_defaults_to_the_replacement_track(self):
+        # Historical provenance (a profile renamed since discovery) must
+        # never silently drop a job out of the primary track.
+        config = SearchProfilesConfig.load()
+        assert config.track_for("backend_platform") == SearchTrack.REPLACEMENT
+
+    def test_craft_is_the_highest_priority_replacement_anchor(self):
+        config = SearchProfilesConfig.load()
+        assert config.profiles["craft"].priority < config.profiles["wordpress"].priority
 
     def test_each_profile_has_at_least_one_query(self):
         config = SearchProfilesConfig.load()

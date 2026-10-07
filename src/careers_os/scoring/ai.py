@@ -27,7 +27,7 @@ MODEL = "claude-sonnet-5"
 # Part of the stored-review cache key (storage AIRefinementRecord): bump
 # whenever the prompt or its inputs change meaning, so old reviews are
 # not reused for a different question.
-PROMPT_VERSION = "finalist-review-v3"
+PROMPT_VERSION = "finalist-review-v4"
 
 _PROMPT_TEMPLATE = """\
 You are the final reviewer for a job-fit system. A deterministic filter \
@@ -53,6 +53,14 @@ The deterministic matcher found the candidate has real evidence for these \
 requirements of this posting: {matched}. Judge the role, not the resume — \
 but do not treat something in that list as a gap.
 
+These lines read like core requirements but matched nothing the matcher \
+understands, so it cannot tell whether they are material:
+{unverified}
+For each one that is genuinely a core, hard-to-learn requirement of this \
+job, copy it verbatim into "material_gaps". Copy nothing else: never \
+invent a requirement, never restate one the matcher already handled, and \
+leave the list empty if none qualify.
+
 Respond with ONLY a JSON object of this exact shape, no prose outside it:
 {{
   "role_fit_score": <0.0-1.0>,
@@ -61,7 +69,8 @@ Respond with ONLY a JSON object of this exact shape, no prose outside it:
   "career_direction_score": <0.0-1.0>,
   "career_direction_reason": "<one or two sentences>",
   "strengths": ["<short phrase>", ... at most 3],
-  "risks": ["<short phrase>", ... at most 3]
+  "risks": ["<short phrase>", ... at most 3],
+  "material_gaps": ["<verbatim line from the list above>", ...]
 }}
 """
 
@@ -80,7 +89,9 @@ def readiness() -> tuple[bool, str]:
     return True, "ready"
 
 
-def evaluate(job: NormalizedJob, profile: CareerProfile, matched: str = "") -> Optional[dict]:
+def evaluate(
+    job: NormalizedJob, profile: CareerProfile, matched: str = "", unverified: Optional[list[str]] = None
+) -> Optional[dict]:
     """Return a raw dict of AI-derived fields, or None if unavailable/failed."""
     if not is_available():
         return None
@@ -100,6 +111,7 @@ def evaluate(job: NormalizedJob, profile: CareerProfile, matched: str = "") -> O
         title=job.title,
         description=job.description[:4000],
         matched=matched or "(none recorded)",
+        unverified="\n".join(f"- {line}" for line in (unverified or [])) or "- (none)",
     )
 
     try:

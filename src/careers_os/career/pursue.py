@@ -10,8 +10,11 @@ opportunity cost — see docs/pursue-recommendation.md.
 
 from careers_os.career.opportunity_value import OpportunityAssessment, OpportunityLevel
 from careers_os.domain.eligibility import EligibilityResult, EligibilityStatus
+from careers_os.domain.enums import SearchTrack
 from careers_os.domain.opportunity_decision import (
     CareerTrackResult,
+    Readiness,
+    ReadinessResult,
     OpportunityCostLevel,
     OpportunityCostResult,
     PursueRecommendation,
@@ -32,10 +35,13 @@ def compute_pursue_recommendation(
     work_style: WorkStyleResult | None = None,
     disfavored_work_styles: frozenset[WorkStyle] | set[WorkStyle] = frozenset(),
     career_track: CareerTrackResult | None = None,
+    track: SearchTrack | None = None,
+    readiness: ReadinessResult | None = None,
 ) -> PursueResult:
     result = _base_recommendation(
         eligibility, qualification, immediate, direction, opportunity_cost, work_style, disfavored_work_styles
     )
+    result = _apply_search_track_rules(result, track, qualification, immediate, direction, readiness)
     if career_track is None or result.recommendation not in _TRACK_CAPPED:
         return result
     factors = [*result.contributing_factors, f"career_track={career_track.alignment.value}"]
@@ -53,6 +59,73 @@ def compute_pursue_recommendation(
         return PursueResult(
             recommendation=PursueRecommendation.PURSUE,
             reason=f"{result.reason} Not strong: {career_track.reason}",
+            contributing_factors=factors,
+        )
+    return result.model_copy(update={"contributing_factors": factors})
+
+
+def _apply_search_track_rules(
+    result: PursueResult,
+    track: SearchTrack | None,
+    qualification: QualificationResult,
+    immediate: OpportunityAssessment,
+    direction: OpportunityAssessment,
+    readiness: ReadinessResult | None = None,
+) -> PursueResult:
+    """Replacement-track discipline (Phase 5). The exploratory track is
+    left exactly as it was: it exists to learn where the market is going,
+    so career direction carrying a role is the point there.
+
+    On the replacement track it is not. Replacing a job means being
+    credible now, so (1) `strong_pursue` requires fully evidenced
+    qualification, not merely moderate, and (2) a strong career-direction
+    signal cannot stand in for a weak immediate opportunity.
+    """
+    if track != SearchTrack.REPLACEMENT:
+        return result
+    factors = [*result.contributing_factors, f"search_track={track.value}"]
+
+    # The base rule reserves strong_pursue for roles that are also a
+    # strong *career-direction* signal. On the replacement track that is
+    # the wrong test: a Craft or Laravel role is rarely a career leap and
+    # is exactly what should rank highest. Readiness replaces direction
+    # here, so "I can do this job now, remotely, at the right pay" is
+    # what earns the top recommendation (Phase 5).
+    if (
+        readiness is not None
+        and readiness.level == Readiness.IMMEDIATE_FIT
+        and qualification.status == QualificationStatus.STRONG
+        and immediate.level == OpportunityLevel.STRONG
+        and result.recommendation == PursueRecommendation.PURSUE
+    ):
+        return PursueResult(
+            recommendation=PursueRecommendation.STRONG_PURSUE,
+            reason="Credible replacement now: core requirements evidenced, remote and geographically "
+            "eligible, compensation confirmed, and the day-to-day work is hands-on.",
+            contributing_factors=[*factors, "readiness=immediate_fit"],
+        )
+    if result.recommendation not in _TRACK_CAPPED:
+        return result
+
+    if (
+        result.recommendation == PursueRecommendation.STRONG_PURSUE
+        and qualification.status != QualificationStatus.STRONG
+    ):
+        return PursueResult(
+            recommendation=PursueRecommendation.PURSUE,
+            reason=f"{result.reason} Not a strong replacement: qualification is "
+            f"{qualification.status.value}, not fully evidenced.",
+            contributing_factors=factors,
+        )
+    if (
+        result.recommendation == PursueRecommendation.PURSUE
+        and immediate.level != OpportunityLevel.STRONG
+        and direction.level == OpportunityLevel.STRONG
+    ):
+        return PursueResult(
+            recommendation=PursueRecommendation.CONSIDER,
+            reason="Career direction is strong, but the immediate opportunity is "
+            f"{immediate.level.value} — career alignment alone does not make this a replacement role.",
             contributing_factors=factors,
         )
     return result.model_copy(update={"contributing_factors": factors})

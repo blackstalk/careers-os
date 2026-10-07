@@ -33,10 +33,12 @@ class FakeClaude:
     def __init__(self, review=STRONG_REVIEW, error=None):
         self.review, self.error, self.calls = review, error, []
         self.matched = ""
+        self.unverified: list[str] = []
 
-    def __call__(self, job, profile, matched=""):
+    def __call__(self, job, profile, matched="", unverified=None):
         self.calls.append(job.title)
         self.matched = matched
+        self.unverified = list(unverified or [])
         if self.error:
             raise self.error
         return self.review
@@ -99,9 +101,17 @@ class TestStopsOnceTheAlertBudgetIsCovered:
     def test_reviewing_stops_after_enough_survivors(self, db_session, evidence_index, claude):
         # Phase 4.4: in the real run 8 of 15 calls went to jobs the review
         # then demoted, so lower-ranked finalists were never reviewed.
+        # Phase 5: budgets are per track, so cap the replacement track.
+        from careers_os.career.preferences import TrackAlertSettings
+        from careers_os.domain.enums import SearchTrack
+        from careers_os.domain.opportunity_decision import PursueRecommendation as PR
+
         prefs = _prefs_with_budget(15)
         prefs = prefs.model_copy(update={"alert_policy": prefs.alert_policy.model_copy(update={
-            "active": prefs.alert_policy.active.model_copy(update={"max_alerts_per_run": 2})})})
+            "tracks": {
+                SearchTrack.REPLACEMENT: TrackAlertSettings(minimum_pursue=PR.PURSUE, max_alerts_per_run=2),
+                SearchTrack.EXPLORATORY: TrackAlertSettings(minimum_pursue=PR.STRONG_PURSUE, max_alerts_per_run=0),
+            }})})
         result = run_scheduled_pipeline(
             JobRepository(db_session), [("ashby", FakeSource("ashby", _catalog(6)))], PROFILES,
             dry_run=True, channel=FakeChannel(), preferences=prefs, evidence_index=evidence_index,
@@ -318,3 +328,50 @@ class TestReviewWording:
                                      {"role_fit_score": 0.3, "career_direction_score": 0.4,
                                       "career_direction_reason": "wrong domain"})
         assert "AI review lowered this: wrong domain" in fit.career_direction_fit.reason
+
+
+class TestMaterialGapAssistance:
+    """Phase 5: the reviewer may confirm which taxonomy-invisible core
+    requirements actually matter. It may never invent one."""
+
+    def _opportunity(self, db_session, evidence_index, unmatched):
+        from careers_os.ingestion.discovery import run_discovery
+        result = run_discovery(
+            JobRepository(db_session), [("ashby", FakeSource("ashby", _catalog(1)))], PROFILES,
+            use_ai=False, preferences=_prefs(), evidence_index=evidence_index,
+        )
+        opp = result.opportunities[0]
+        detail = opp.fit.experience_detail.model_copy(update={"unmatched_core_requirements": unmatched})
+        opp.fit = opp.fit.model_copy(update={"experience_detail": detail})
+        return opp
+
+    def test_reviewer_is_shown_the_unverified_lines(self, db_session, evidence_index):
+        opp = self._opportunity(db_session, evidence_index, ["Deep knowledge of FPGA timing closure"])
+        fake = FakeClaude()
+        refine_finalists([opp], repository=JobRepository(db_session), budget=1,
+                         preferences=_prefs(), evidence_index=evidence_index, evaluator=fake)
+        assert fake.unverified == ["Deep knowledge of FPGA timing closure"]
+
+    def test_confirmed_gap_is_kept_and_can_only_lower_readiness(self, db_session, evidence_index):
+        line = "Deep knowledge of FPGA timing closure"
+        opp = self._opportunity(db_session, evidence_index, [line])
+        fake = FakeClaude(review={**STRONG_REVIEW, "material_gaps": [line]})
+        refine_finalists([opp], repository=JobRepository(db_session), budget=1,
+                         preferences=_prefs(), evidence_index=evidence_index, evaluator=fake)
+        assert opp.fit.experience_detail.unmatched_core_requirements == [line]
+        assert opp.decision.readiness.level.value != "immediate_fit"
+
+    def test_invented_gaps_are_discarded(self, db_session, evidence_index):
+        opp = self._opportunity(db_session, evidence_index, ["Deep knowledge of FPGA timing closure"])
+        fake = FakeClaude(review={**STRONG_REVIEW, "material_gaps": ["10 years of Rust", "PhD required"]})
+        refine_finalists([opp], repository=JobRepository(db_session), budget=1,
+                         preferences=_prefs(), evidence_index=evidence_index, evaluator=fake)
+        kept = opp.fit.experience_detail.unmatched_core_requirements
+        assert "10 years of Rust" not in kept and "PhD required" not in kept
+
+    def test_everything_still_works_without_a_key(self, db_session, evidence_index):
+        # conftest removes ANTHROPIC_API_KEY; no evaluator is configured.
+        opp = self._opportunity(db_session, evidence_index, ["Deep knowledge of FPGA timing closure"])
+        stats = refine_finalists([opp], repository=JobRepository(db_session), budget=5,
+                                 preferences=_prefs(), evidence_index=evidence_index)
+        assert stats.calls == 0 and "no new reviews" in stats.status

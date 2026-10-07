@@ -243,6 +243,9 @@ class JobRepository:
             pursue_factors=decision.pursue.contributing_factors,
             work_style=decision.work_style.model_dump(mode="json"),
             career_track=decision.career_track.model_dump(mode="json"),
+            readiness=decision.readiness.model_dump(mode="json"),
+            compensation=decision.compensation.model_dump(mode="json"),
+            tracks=[t.value for t in decision.tracks],
         )
         self.session.add(record)
         self.session.flush()

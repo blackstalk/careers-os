@@ -4,7 +4,7 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, Field
 
-from careers_os.domain.enums import OperatingMode
+from careers_os.domain.enums import OperatingMode, SearchTrack
 from careers_os.domain.opportunity_decision import PursueRecommendation, WorkStyle
 
 DEFAULT_PREFERENCES_PATH = Path(__file__).parent / "data" / "preferences.yaml"
@@ -92,12 +92,47 @@ class AlertModeSettings(BaseModel):
     max_alerts_per_run: int = 5
 
 
+class TrackAlertSettings(BaseModel):
+    """Per-track alert settings (Phase 5). Each search track gets its own
+    threshold and budget so a compelling exploratory role can never
+    consume a slot meant for a replacement opportunity.
+
+    `max_verification_alerts_per_run` is a *separate* allowance for
+    opportunities that look strong but whose pay or eligibility is
+    unconfirmed. It never displaces a confirmed opportunity: it is spent
+    only after the confirmed budget is filled or exhausted.
+    """
+
+    minimum_pursue: PursueRecommendation
+    max_alerts_per_run: int = Field(default=4, ge=0)
+    max_verification_alerts_per_run: int = Field(default=0, ge=0)
+    # Verification alerts use their own, lower floor: a job whose pay or
+    # eligibility is unconfirmed can never reach `strong_pursue` (that
+    # requires readiness `immediate_fit`), so holding it to the confirmed
+    # threshold would make the verification lane unreachable.
+    verification_minimum_pursue: PursueRecommendation = PursueRecommendation.PURSUE
+
+
 class AlertPolicy(BaseModel):
     passive: AlertModeSettings
     active: AlertModeSettings
+    tracks: dict[SearchTrack, TrackAlertSettings] = Field(default_factory=dict)
 
     def for_mode(self, mode: OperatingMode) -> AlertModeSettings:
         return self.passive if mode == OperatingMode.PASSIVE else self.active
+
+    def for_track(self, track: SearchTrack, mode: OperatingMode) -> TrackAlertSettings:
+        """Track settings when configured, otherwise the operating mode's
+        settings — so a preferences.yaml without a `tracks:` block keeps
+        behaving exactly as it did before Phase 5."""
+        configured = self.tracks.get(track)
+        if configured is not None:
+            return configured
+        mode_settings = self.for_mode(mode)
+        return TrackAlertSettings(
+            minimum_pursue=mode_settings.minimum_pursue,
+            max_alerts_per_run=mode_settings.max_alerts_per_run,
+        )
 
 
 class WorkStylePreferences(BaseModel):

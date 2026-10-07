@@ -11,7 +11,9 @@ from dataclasses import dataclass, field
 
 from careers_os.career.bridge_role import BridgeClassification
 from careers_os.career.opportunity_value import OpportunityLevel
-from careers_os.domain.matching import GapType
+from careers_os.domain.eligibility import ConstraintType
+from careers_os.domain.matching import GapType, MatchType
+from careers_os.domain.requirements import RequirementImportance
 from careers_os.domain.opportunity_decision import Freshness, OpportunityCostLevel, ScopeDimension, WorkStyle
 from careers_os.domain.qualification import QualificationStatus
 from careers_os.ingestion.evaluation import EvaluationResult
@@ -42,6 +44,16 @@ class AlertContent:
     career_direction: str
     opportunity_value: str
     work_style: str = "unknown"
+    # Phase 5: why this is (or isn't) a credible replacement right now.
+    track: str = "replacement"
+    readiness: str = "stretch"
+    readiness_reason: str = ""
+    compensation_status: str = "unknown"
+    core_matches: list[str] = field(default_factory=list)
+    core_gaps: list[str] = field(default_factory=list)
+    preferred_gaps: list[str] = field(default_factory=list)
+    unverified_requirements: list[str] = field(default_factory=list)
+    geographic_eligibility: str = ""
 
     reasons: list[str] = field(default_factory=list)
     watchouts: list[str] = field(default_factory=list)
@@ -58,8 +70,21 @@ class AlertContent:
     def subject(self) -> str:
         return f"Careers OS: {self.pursue.replace('_', ' ').title()} opportunity — {self.company} / {self.role}"
 
+    def _evidence_lines(self) -> list[str]:
+        """The replacement-track evidence rows, omitting the ones that
+        have nothing to say for this job."""
+        rows = [
+            ("Readiness note", self.readiness_reason),
+            ("Geographic eligibility", self.geographic_eligibility),
+            ("Core requirements evidenced", ", ".join(self.core_matches)),
+            ("Core gaps", ", ".join(self.core_gaps)),
+            ("Preferred-only gaps", ", ".join(self.preferred_gaps)),
+            ("Core requirements not machine-verified", "; ".join(self.unverified_requirements)),
+        ]
+        return [f"{label}: {value}" for label, value in rows if value]
+
     def to_plain_text(self) -> str:
-        lines = [
+        lines: list[str] = [
             f"{self.role} — {self.company}",
             f"Location: {self.location}  |  Work arrangement: {self.work_arrangement}",
             f"Compensation: {self.compensation}",
@@ -71,6 +96,9 @@ class AlertContent:
             f"Career direction: {self.career_direction}",
             f"Opportunity value: {self.opportunity_value}",
             f"Work style: {self.work_style.replace('_', ' ')}",
+            f"Track: {self.track}  |  Readiness: {self.readiness.replace('_', ' ')}",
+            f"Compensation status: {self.compensation_status.replace('_', ' ')}",
+            *self._evidence_lines(),
             "",
             "Why this was surfaced:",
         ]
@@ -120,6 +148,42 @@ def _build_reasons(result: EvaluationResult) -> list[str]:
             "for your current operating mode."
         )
     return reasons[:_MAX_REASONS]
+
+
+_MAX_LISTED = 6
+
+
+def _core_matches(result: EvaluationResult) -> list[str]:
+    detail = result.fit.experience_detail
+    if detail is None:
+        return []
+    return [
+        m.requirement.text for m in detail.requirement_matches
+        if m.requirement.is_core and m.match_type in (MatchType.STRONG_MATCH, MatchType.PARTIAL_MATCH)
+    ][:_MAX_LISTED]
+
+
+def _preferred_gaps(result: EvaluationResult) -> list[str]:
+    """Gaps in preferred-only qualifications, listed separately because
+    they never gate anything (docs/pursue-recommendation.md)."""
+    detail = result.fit.experience_detail
+    if detail is None:
+        return []
+    return [
+        m.requirement.text for m in detail.requirement_matches
+        if m.requirement.importance == RequirementImportance.PREFERRED
+        and m.match_type in (MatchType.UNSUPPORTED, MatchType.ADJACENT_EXPERIENCE)
+    ][:_MAX_LISTED]
+
+
+def _geographic_eligibility(result: EvaluationResult) -> str:
+    geo = [
+        c for c in result.decision.eligibility.checks
+        if c.constraint_type == ConstraintType.GEOGRAPHIC_RESIDENCY
+    ]
+    if not geo:
+        return "No geographic restriction detected; open to a US/Texas-based candidate."
+    return "; ".join(f"{c.status.value}: {c.requirement}" for c in geo)
 
 
 def _build_watchouts(result: EvaluationResult) -> list[str]:
@@ -184,6 +248,15 @@ def build_alert_content(
         career_direction=result.direction.level.value,
         opportunity_value=result.immediate.level.value,
         work_style=result.decision.work_style.style.value,
+        track=", ".join(t.value for t in result.decision.tracks) or "replacement",
+        readiness=result.decision.readiness.level.value,
+        readiness_reason=result.decision.readiness.reason,
+        compensation_status=result.decision.compensation.status.value,
+        core_matches=_core_matches(result),
+        core_gaps=list(result.decision.readiness.core_gaps),
+        preferred_gaps=_preferred_gaps(result),
+        unverified_requirements=list(result.decision.readiness.unverified_requirements),
+        geographic_eligibility=_geographic_eligibility(result),
         reasons=_build_reasons(result),
         watchouts=_build_watchouts(result),
         related_variant_count=related_variant_count,

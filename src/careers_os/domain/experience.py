@@ -27,6 +27,15 @@ class ExperienceFitDetail(BaseModel):
     requirement_matches: list[RequirementMatch] = Field(default_factory=list)
     years_estimates: dict[str, YearsEstimate] = Field(default_factory=dict)
     resume_available: bool = True  # False when no resume has been imported yet
+    # Requirement-section lines that read as core but matched nothing in
+    # the taxonomy (Phase 5). Structured uncertainty: they are never
+    # scored as gaps, but they stop a posting full of unrecognized core
+    # responsibilities from reading as a fully evidenced match.
+    unmatched_core_requirements: list[str] = Field(default_factory=list)
+
+    @property
+    def core_matches(self) -> list[RequirementMatch]:
+        return [m for m in self.requirement_matches if m.requirement.is_core]
 
     @property
     def strong_matches(self) -> list[RequirementMatch]:
