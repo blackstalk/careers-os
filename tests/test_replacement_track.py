@@ -404,3 +404,25 @@ class TestPhase51Guardrails:
                    " Requirements: Experience with workflow automation. ")
         core = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load()) if r.is_core}
         assert "go" in core
+
+    def test_single_core_match_is_surfaced_without_changing_classification(self, evidence_index):
+        """Phase 5.1: one-core-match cases stay visible rather than being
+        reclassified (a blanket two-match rule would create false
+        negatives on sparse postings)."""
+        from careers_os.notifications.content import build_alert_content
+        from careers_os.career.preferences import Preferences
+        from careers_os.career.profile import CareerProfile
+        from careers_os.ingestion.evaluation import evaluate_opportunity
+        from careers_os.scoring.engine import score_job
+
+        job = _job("Backend Engineer", " Requirements: Experience with REST APIs. ",
+                   salary_min=150000, salary_max=200000)
+        prefs = Preferences.load()
+        fit = score_job(job, CareerProfile.load(), prefs, use_ai=False, evidence_index=evidence_index)
+        result = evaluate_opportunity(job, fit, preferences=prefs, evidence_index=evidence_index,
+                                      use_ai=False, tracks=[SearchTrack.REPLACEMENT])
+        assert result.decision.readiness.level == Readiness.IMMEDIATE_FIT  # unchanged
+        content = build_alert_content("Acme", job.title, "Remote", "remote", "$150,000-$200,000/yr",
+                                      "test", job.source_url, result)
+        assert len(content.core_matches) == 1
+        assert any("single evidenced core requirement" in w for w in content.watchouts)

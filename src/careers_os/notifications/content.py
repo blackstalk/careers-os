@@ -76,7 +76,7 @@ class AlertContent:
         rows = [
             ("Readiness note", self.readiness_reason),
             ("Geographic eligibility", self.geographic_eligibility),
-            ("Core requirements evidenced", ", ".join(self.core_matches)),
+            (f"Core requirements evidenced ({len(self.core_matches)})", ", ".join(self.core_matches)),
             ("Core gaps", ", ".join(self.core_gaps)),
             ("Preferred-only gaps", ", ".join(self.preferred_gaps)),
             ("Core requirements not machine-verified", "; ".join(self.unverified_requirements)),
@@ -198,6 +198,14 @@ def _build_watchouts(result: EvaluationResult) -> list[str]:
         for m in detail.requirement_matches:
             if m.gap_type in (GapType.INTERVIEW_PREP_GAP, GapType.RESUME_LANGUAGE_GAP):
                 watchouts.append(f"{m.requirement.text}: {m.reason}")
+
+    # Phase 5.1: a recommendation resting on a single evidenced core
+    # requirement is thin. Surfaced, deliberately not reclassified.
+    if len(_core_matches(result)) == 1:
+        watchouts.append(
+            "This rests on a single evidenced core requirement "
+            f"({_core_matches(result)[0]}) — check the posting yourself before treating it as a match."
+        )
 
     comp = result.fit.compensation_fit
     if comp.confidence < _COMP_CONFIDENCE_THRESHOLD:

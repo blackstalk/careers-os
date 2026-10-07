@@ -535,7 +535,9 @@ def _print_opportunity(rank: int, opp: DiscoveryOpportunity) -> None:
                   f"Career Track: {decision.career_track.alignment.value}")
     console.print(f"   Search track: {', '.join(t.value for t in decision.tracks) or 'replacement'}  |  "
                   f"Readiness: {decision.readiness.level.value.replace('_', ' ')}  |  "
-                  f"Pay: {decision.compensation.status.value.replace('_', ' ')}")
+                  f"Pay: {decision.compensation.status.value.replace('_', ' ')}  |  "
+                  f"Core evidence: {len(decision.readiness.core_gaps) and '' or ''}"
+                  f"{sum(1 for m in (opp.fit.experience_detail.requirement_matches if opp.fit.experience_detail else []) if m.requirement.is_core and m.match_type in (MatchType.STRONG_MATCH, MatchType.PARTIAL_MATCH))}")
     if decision.readiness.core_gaps:
         console.print(f"   [yellow]Core gaps:[/yellow] {', '.join(decision.readiness.core_gaps[:4])}")
 
@@ -1352,6 +1354,10 @@ def _print_evaluation_report(job_record, result) -> None:
     console.print(f"Search track: {', '.join(t.value for t in decision.tracks) or 'replacement'}")
     console.print(f"Compensation: {decision.compensation.status.value.replace('_', ' ')} "
                   f"({decision.compensation.reason})")
+    core = [m for m in (detail.requirement_matches if detail else [])
+            if m.requirement.is_core and m.match_type in (MatchType.STRONG_MATCH, MatchType.PARTIAL_MATCH)]
+    console.print(f"Core requirements evidenced: {len(core)}"
+                  + ("  [yellow](only one — thin evidence)[/yellow]" if len(core) == 1 else ""))
     for label, items in (("Core gaps", r.core_gaps), ("Thin core evidence", r.thin_core_gaps),
                          ("Core requirements not machine-verified", r.unverified_requirements)):
         if items:
