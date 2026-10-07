@@ -140,6 +140,39 @@ rest_api:
   category: architecture
   adjacent: [integration, microservices]
 
+react:
+  display_name: React
+  # Punctuation variants are listed explicitly rather than matching bare
+  # "react", which would also fire inside "reactive" and "reaction".
+  aliases: ["react.js", "reactjs", "react ", "react,", "react.", "react/", "react)"]
+  category: framework
+  adjacent: [javascript, typescript]
+
+react_native:
+  display_name: React Native
+  # Not bare "expo": it matches inside "exposure".
+  aliases: ["react native", "react-native", "expo ", "expo,", "expo."]
+  category: framework
+  adjacent: [react, javascript, typescript]
+
+next_js:
+  display_name: Next.js
+  aliases: ["next.js", "nextjs"]
+  category: framework
+  adjacent: [react, javascript, typescript]
+
+vue:
+  display_name: Vue
+  aliases: ["vue.js", "vuejs"]
+  category: framework
+  adjacent: [javascript, typescript]
+
+node_js:
+  display_name: Node.js
+  aliases: ["node.js", "nodejs"]
+  category: framework
+  adjacent: [javascript, typescript]
+
 graphql:
   display_name: GraphQL
   aliases: ["graphql"]

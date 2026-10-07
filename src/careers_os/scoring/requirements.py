@@ -50,6 +50,12 @@ _CORE_SECTION_MARKERS = _HARD_SECTION_MARKERS + (
     "requirements", "qualifications", "what you'll bring", "what you will bring",
     "what you bring", "who you are", "about you", "skills and experience",
     "experience required", "must have", "what we're looking for", "what we are looking for",
+    # Phase 5.1: a responsibilities list establishes what the job is just
+    # as plainly as a requirements list. Bare "you will"/"you have" are
+    # deliberately excluded: they occur mid-prose and would mark the rest
+    # of the posting as core.
+    "responsibilities", "what you'll do", "what you will do", "what you'll be doing",
+    "in this role you will", "your impact", "the role",
 )
 
 # A requirement-section line reads as core when it is phrased as one.
@@ -158,7 +164,11 @@ def extract_requirements(
     preferred_start = _preferred_section_start(text_lower)
     hard_start = _section_start(text_lower, _HARD_SECTION_MARKERS)
     core_span = _core_span(text_lower, preferred_start)
-    title_lower = (job.title or "").lower()
+    # Space-padded around punctuation: a title like "Database Automation
+    # (Go)" or "Senior Engineer, React/Next.js" must still mark those
+    # technologies core. This only affects whether an already-extracted
+    # requirement counts as core, never what gets extracted (Phase 5.1).
+    title_lower = " " + re.sub(r"[^a-z0-9.+#]+", " ", (job.title or "").lower()) + " "
 
     requirements: dict[str, JobRequirement] = {}
 

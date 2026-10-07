@@ -19,11 +19,27 @@ class TestSearchProfilesConfig:
         assert replacement == {"craft", "php", "laravel", "fullstack_js", "backend_api", "wordpress"}
         assert exploratory == {"fde"}
 
-    def test_unknown_profile_name_defaults_to_the_replacement_track(self):
-        # Historical provenance (a profile renamed since discovery) must
-        # never silently drop a job out of the primary track.
+    def test_retired_profile_name_confers_no_track(self):
+        # Phase 5.1: a stale provenance string pulled LangChain
+        # professional-services roles into the replacement lane. A
+        # retired name is history, not a current lens.
         config = SearchProfilesConfig.load()
-        assert config.track_for("backend_platform") == SearchTrack.REPLACEMENT
+        assert config.track_for("backend_platform") is None
+        assert "backend_platform" in config.retired_profiles
+
+    def test_unknown_profile_name_confers_no_track(self):
+        assert SearchProfilesConfig.load().track_for("some_future_profile") is None
+
+    def test_tracks_for_uses_only_profiles_that_exist_today(self):
+        config = SearchProfilesConfig.load()
+        # Retired-only provenance: discoverable, but not replacement.
+        assert config.tracks_for(["backend_platform"]) == [SearchTrack.EXPLORATORY]
+        # Retired + exploratory: exploratory only.
+        assert config.tracks_for(["backend_platform", "fde"]) == [SearchTrack.EXPLORATORY]
+        # Genuine multi-track membership is preserved.
+        assert config.tracks_for(["fullstack_js", "fde"]) == [
+            SearchTrack.EXPLORATORY, SearchTrack.REPLACEMENT]
+        assert config.tracks_for([]) == [SearchTrack.EXPLORATORY]
 
     def test_craft_is_the_highest_priority_replacement_anchor(self):
         config = SearchProfilesConfig.load()

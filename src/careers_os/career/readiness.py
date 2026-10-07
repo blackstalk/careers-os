@@ -32,6 +32,17 @@ from careers_os.domain.qualification import QualificationResult, QualificationSt
 _SUBSTANTIAL_GAP_COUNT = 3
 
 
+def _core_evidence(detail: Optional[ExperienceFitDetail]) -> tuple[int, int]:
+    """(core requirements found, core requirements the candidate can
+    actually evidence). Both zero means the posting's requirements could
+    not be parsed at all — uncertainty, not a clean bill of health."""
+    if detail is None:
+        return 0, 0
+    core = [m for m in detail.requirement_matches if m.requirement.is_core]
+    supported = [m for m in core if m.match_type in (MatchType.STRONG_MATCH, MatchType.PARTIAL_MATCH)]
+    return len(core), len(supported)
+
+
 def _core_gaps(detail: Optional[ExperienceFitDetail]) -> tuple[list[str], list[str]]:
     """(unsupported, thin) core requirement names. Thin means adjacent
     evidence only: plausible transfer, not demonstrated experience."""
@@ -77,6 +88,26 @@ def assess_readiness(
             reason=f"Eligibility needs confirmation: {checks}.",
             core_gaps=unsupported, thin_core_gaps=thin, unverified_requirements=unmatched,
         )
+    # Phase 5.1: affirmative core evidence is required before anything
+    # can be called an immediate fit. A posting whose requirements could
+    # not be parsed (no heading, prose-only, a two-line listing) used to
+    # yield "no core gaps" and read as a clean match; absence of parsed
+    # requirements is uncertainty, not success. Qualification can still
+    # be STRONG off incidental mentions, and that must not become
+    # replacement confidence on its own.
+    core_found, core_supported = _core_evidence(detail)
+    if core_supported == 0:
+        reason = (
+            "No requirements could be parsed from this posting, so there is nothing to check "
+            "the candidate's evidence against."
+            if core_found == 0 else
+            "None of the posting's core requirements are evidenced in imported career history."
+        )
+        return ReadinessResult(
+            level=Readiness.NEEDS_VERIFICATION, reason=reason,
+            core_gaps=unsupported, thin_core_gaps=thin, unverified_requirements=unmatched,
+        )
+
     # Pay only gates the replacement objective: the exploratory track is
     # about direction, not about replacing current income.
     if track == SearchTrack.REPLACEMENT and compensation.needs_verification:

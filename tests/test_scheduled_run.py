@@ -85,9 +85,8 @@ def _raw(job_id: str, title: str, description: str, **overrides) -> RawJob:
 # reach strong_pursue given the default career profile.
 _STRONG_JOB = _raw(
     "1", "Lead Solutions Architect",
-    "Own solution architecture and AI-assisted automation systems using AWS, REST API "
-    "integrations, and provide technical leadership and customer-facing delivery for "
-    "enterprise clients.",
+    "Own solution architecture and AI-assisted automation systems for enterprise clients. "
+    "Requirements: Experience with AWS and cloud infrastructure. Experience with REST API integrations. Technical leadership and customer-facing delivery.",
     hourly_min=150, hourly_max=180,
 )
 _WEAK_JOB = _raw("2", "Data Entry Clerk", "Enter data into spreadsheets using a PHP tool.")

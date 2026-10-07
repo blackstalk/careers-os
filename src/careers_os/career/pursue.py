@@ -104,6 +104,18 @@ def _apply_search_track_rules(
             "eligible, compensation confirmed, and the day-to-day work is hands-on.",
             contributing_factors=[*factors, "readiness=immediate_fit"],
         )
+    # A substantial-gap role is a direction to grow toward, not something
+    # to pursue as a replacement (Phase 5.1).
+    if (
+        readiness is not None
+        and readiness.level == Readiness.LEARNING_TARGET
+        and result.recommendation in _TRACK_CAPPED
+    ):
+        return PursueResult(
+            recommendation=PursueRecommendation.CONSIDER,
+            reason=f"Longer-term target rather than a replacement: {readiness.reason}",
+            contributing_factors=[*factors, "readiness=learning_target"],
+        )
     if result.recommendation not in _TRACK_CAPPED:
         return result
 

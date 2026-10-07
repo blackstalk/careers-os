@@ -145,8 +145,10 @@ class TestStoredReviews:
 
     def test_changed_description_is_reviewed_again(self, db_session, evidence_index, claude):
         _run(db_session, evidence_index, _catalog(1))
-        changed = [{**_catalog(1)[0], "description": "Own solution architecture on AWS with REST API "
-                    "integrations and AI automation; technical leadership and customer-facing delivery. New scope."}]
+        changed = [{**_catalog(1)[0], "description":
+                    "Own solution architecture and AI automation. New scope this quarter. "
+                    "Requirements: Experience with AWS and cloud infrastructure. Experience with REST API "
+                    "integrations. Technical leadership and customer-facing delivery."}]
         _run(db_session, evidence_index, changed)
         assert len(claude.calls) == 2
 
@@ -375,3 +377,23 @@ class TestMaterialGapAssistance:
         stats = refine_finalists([opp], repository=JobRepository(db_session), budget=5,
                                  preferences=_prefs(), evidence_index=evidence_index)
         assert stats.calls == 0 and "no new reviews" in stats.status
+
+
+class TestTracksSurviveReview:
+    def test_review_does_not_move_an_exploratory_job_into_replacement(self, db_session, evidence_index, claude):
+        """Phase 5.1: the recompute after an AI review dropped the job's
+        tracks, so every reviewed exploratory role reappeared in the
+        replacement lane."""
+        from careers_os.domain.enums import SearchTrack
+        from careers_os.ingestion.discovery import run_discovery
+
+        discovered = run_discovery(
+            JobRepository(db_session), [("ashby", FakeSource("ashby", _catalog(1)))], PROFILES,
+            use_ai=False, preferences=_prefs(), evidence_index=evidence_index,
+        )
+        opp = discovered.opportunities[0]
+        opp.tracks = [SearchTrack.EXPLORATORY]
+        opp.decision = opp.decision.model_copy(update={"tracks": [SearchTrack.EXPLORATORY]})
+        refine_finalists([opp], repository=JobRepository(db_session), budget=1,
+                         preferences=_prefs(), evidence_index=evidence_index, evaluator=claude)
+        assert opp.decision.tracks == [SearchTrack.EXPLORATORY]

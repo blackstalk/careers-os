@@ -28,6 +28,11 @@ class SearchProfile(BaseModel):
 class SearchProfilesConfig(BaseModel):
     profiles: dict[str, SearchProfile]
     default_employment_types: list[EmploymentType] = []
+    # Profile names that existed in earlier runs and are still recorded
+    # on stored jobs. They are known history, not current lenses: they
+    # confer no track, so a job only joins a track through a profile that
+    # is actually configured today (Phase 5.1).
+    retired_profiles: list[str] = []
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "SearchProfilesConfig":
@@ -41,15 +46,32 @@ class SearchProfilesConfig(BaseModel):
         return cls(
             profiles=profiles,
             default_employment_types=raw.get("default_employment_types", []),
+            retired_profiles=raw.get("retired_profiles", []),
         )
 
-    def track_for(self, profile_name: str) -> SearchTrack:
-        """Track a profile name belongs to. An unrecognized name (e.g. a
-        profile renamed since the job was discovered) is treated as
-        replacement so historical provenance never silently drops a job
-        out of the primary track."""
+    def track_for(self, profile_name: str) -> Optional[SearchTrack]:
+        """The track a profile name belongs to, or None for a retired or
+        unknown name.
+
+        Returning None is deliberate (Phase 5.1). Defaulting unknown
+        names to `replacement` let a retired profile string recorded on
+        an old job pull that job into the primary lane: five LangChain
+        professional-services roles reached replacement alerts purely
+        through a stale `backend_platform` provenance string. Membership
+        now requires a profile that exists today.
+        """
         profile = self.profiles.get(profile_name)
-        return profile.track if profile else SearchTrack.REPLACEMENT
+        return profile.track if profile else None
+
+    def tracks_for(self, profile_names: list[str]) -> list[SearchTrack]:
+        """Every track a job belongs to, from the profiles that actually
+        found it. Multi-track membership is legitimate: a role found by
+        both `fullstack_js` and `fde` participates in both, and must
+        satisfy each track's own rules to alert there. A job with only
+        retired/unknown provenance falls back to `exploratory` — still
+        discoverable, never able to consume a replacement slot."""
+        tracks = {t for t in (self.track_for(n) for n in profile_names) if t is not None}
+        return sorted(tracks or {SearchTrack.EXPLORATORY}, key=lambda t: t.value)
 
     def priority_for(self, profile_name: str) -> int:
         profile = self.profiles.get(profile_name)

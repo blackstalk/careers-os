@@ -199,6 +199,10 @@ def refine_finalists(
         result = evaluate_opportunity(
             job, refined_fit, candidate=candidate, preferences=preferences,
             taxonomy=taxonomy, evidence_index=evidence_index, use_ai=False,
+            # Carry the job's tracks through the recompute: without this
+            # every reviewed opportunity defaulted back to the
+            # replacement track (Phase 5.1).
+            tracks=list(opp.decision.tracks) or list(opp.tracks),
         )
         decision = result.decision
         if review["role_fit_score"] < POOR_FIT_BELOW and decision.pursue.recommendation in _CAPPED:

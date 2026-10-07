@@ -340,3 +340,67 @@ class TestVerificationLane:
         settings = policy.for_track(SearchTrack.REPLACEMENT, OperatingMode.PASSIVE)
         assert isinstance(settings, TrackAlertSettings)
         assert settings.max_alerts_per_run == 4 and settings.max_verification_alerts_per_run == 1
+
+
+class TestPhase51Guardrails:
+    """Failures the first live dry run exposed."""
+
+    def test_posting_with_no_parseable_requirements_is_not_an_immediate_fit(self, evidence_index):
+        """The Deepgram case: a backend posting with no requirements
+        heading produced "no core gaps" and read as a clean match."""
+        body = ("We are building inference services at scale. Join a team shipping audio models to "
+                "production. You will collaborate with researchers and help operate our platform.")
+        d = _decide(_job("Backend Engineer - Inference Services", body,
+                         salary_min=150000, salary_max=220000), evidence_index)
+        assert d.readiness.level == Readiness.NEEDS_VERIFICATION
+        assert d.pursue.recommendation != PursueRecommendation.STRONG_PURSUE
+        assert "No requirements could be parsed" in d.readiness.reason
+
+    def test_core_requirements_with_no_supporting_evidence_are_not_an_immediate_fit(self, evidence_index):
+        body = (" Requirements: Deep experience with Erlang and OTP supervision trees. "
+                "Experience with Elixir in production. ")
+        d = _decide(_job("Backend Engineer", body, salary_min=150000, salary_max=200000), evidence_index)
+        assert d.readiness.level != Readiness.IMMEDIATE_FIT
+
+    def test_learning_target_is_capped_below_pursue_on_replacement(self, evidence_index):
+        """The Curotec case: substantial gaps presented as `pursue`."""
+        d = _decide(_job("Platform Engineer",
+                         " Requirements: Deep knowledge of Kubernetes operators and service mesh internals. "
+                         "Strong experience with distributed consensus protocols. "
+                         "Expertise in eBPF observability tooling. "
+                         "Experience with capacity forecasting for bare-metal fleets. ",
+                         salary_min=150000, salary_max=185000), evidence_index)
+        assert d.readiness.level == Readiness.LEARNING_TARGET
+        assert d.pursue.recommendation == PursueRecommendation.CONSIDER
+
+    def test_next_js_is_extracted_as_a_core_requirement(self, evidence_index):
+        from careers_os.scoring.requirements import extract_requirements
+        job = _job("Senior Full-Stack Engineer (Next.js / AI)",
+                   " Responsibilities: Build product surfaces in Next.js and React. Integrate REST APIs. ")
+        core = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load()) if r.is_core}
+        assert {"next_js", "react"} <= core
+
+    def test_responsibilities_section_establishes_core_requirements(self, evidence_index):
+        from careers_os.scoring.requirements import extract_requirements
+        job = _job("Software Engineer",
+                   " What you'll do: Build Laravel services. Integrate REST APIs against AWS. ")
+        core = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load()) if r.is_core}
+        assert {"laravel", "rest_api", "aws"} <= core
+
+    def test_reactive_and_exposure_do_not_match_react_or_expo(self):
+        from careers_os.scoring.requirements import extract_requirements
+        job = _job("Backend Engineer",
+                   " Requirements: Build reactive systems with fast reaction times and broad exposure. ")
+        skills = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load())}
+        assert "react" not in skills and "react_native" not in skills
+
+    def test_technology_in_a_parenthesized_title_is_core(self):
+        """GitLab's "Database Automation (Go)" extracted Go from the body
+        but never marked it core, so a Go-centric role read as a clean
+        match on one unrelated requirement."""
+        from careers_os.scoring.requirements import extract_requirements
+        job = _job("Staff Backend Engineer, Database Automation (Go)",
+                   " Build automation tooling. You will work with Go across our fleet. "
+                   " Requirements: Experience with workflow automation. ")
+        core = {r.canonical_skill for r in extract_requirements(job, SkillsTaxonomy.load()) if r.is_core}
+        assert "go" in core

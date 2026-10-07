@@ -27,9 +27,11 @@ from careers_os.storage.repository import JobRepository
 NOW = datetime.now(timezone.utc)
 
 _STRONG_DESCRIPTION = (
-    "Own solution architecture and AI-assisted automation systems using AWS, REST API "
-    "integrations, and provide technical leadership and customer-facing delivery for "
-    "enterprise clients."
+    "Own solution architecture and AI-assisted automation systems for enterprise clients. "
+    # A requirements heading, as real postings have: without one nothing is
+    # marked core and readiness is (correctly) uncertainty, not a match.
+    "Requirements: Experience with AWS and cloud infrastructure. Experience with REST API "
+    "integrations. Technical leadership and customer-facing delivery."
 )
 
 

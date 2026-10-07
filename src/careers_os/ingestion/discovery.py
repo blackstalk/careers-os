@@ -182,11 +182,7 @@ def run_discovery(
             fit, bridge, immediate, direction, preferences.discovery_ranking_weights
         )
         normalized = job_record_to_normalized(job)
-        tracks = sorted(
-            {profiles_config.track_for(name) for name in (job.discovered_by_profiles or [])}
-            or {SearchTrack.REPLACEMENT},
-            key=lambda t: t.value,
-        )
+        tracks = profiles_config.tracks_for(list(job.discovered_by_profiles or []))
         eval_result = evaluate_opportunity(
             normalized, fit, candidate=candidate, preferences=preferences,
             taxonomy=taxonomy, evidence_index=evidence_index, use_ai=False, tracks=tracks,

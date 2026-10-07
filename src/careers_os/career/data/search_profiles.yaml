@@ -91,6 +91,13 @@ profiles:
       - "Systems Engineer"
       - "Customer Engineer"
 
+# Profile names from earlier phases that are still recorded on stored
+# jobs. Listed so they are known history rather than unknown names; they
+# confer no track membership, so an old provenance string can no longer
+# pull a job into the replacement lane on its own (Phase 5.1).
+retired_profiles:
+  - backend_platform
+
 # Employment types considered in scope for discovery's default filter.
 # Not a hard exclusion elsewhere in scoring — only `jobs discover`/`jobs
 # run`'s default filter, always overridable with `--employment-type`.
